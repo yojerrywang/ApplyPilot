@@ -7,6 +7,7 @@ profile and resume file.
 
 import json
 import logging
+import os
 import re
 import time
 from datetime import datetime, timezone
@@ -131,7 +132,10 @@ def run_scoring(limit: int = 0, rescore: bool = False) -> dict:
         columns = jobs[0].keys()
         jobs = [dict(zip(columns, row)) for row in jobs]
 
-    log.info("Scoring %d jobs sequentially...", len(jobs))
+    # Rate limit: 4.5s between calls = ~13 RPM (Gemini free tier = 15 RPM)
+    _SCORING_DELAY = float(os.environ.get("APPLYPILOT_SCORE_DELAY", "4.5"))
+
+    log.info("Scoring %d jobs sequentially (%.1fs delay between calls)...", len(jobs), _SCORING_DELAY)
     t0 = time.time()
     completed = 0
     errors = 0
@@ -147,19 +151,22 @@ def run_scoring(limit: int = 0, rescore: bool = False) -> dict:
 
         results.append(result)
 
+        # Write score to DB immediately so progress is saved if interrupted
+        now = datetime.now(timezone.utc).isoformat()
+        conn.execute(
+            "UPDATE jobs SET fit_score = ?, score_reasoning = ?, scored_at = ? WHERE url = ?",
+            (result["score"], f"{result.get('keywords', '')}\n{result.get('reasoning', '')}", now, result["url"]),
+        )
+        conn.commit()
+
         log.info(
             "[%d/%d] score=%d  %s",
             completed, len(jobs), result["score"], job.get("title", "?")[:60],
         )
 
-    # Write scores to DB
-    now = datetime.now(timezone.utc).isoformat()
-    for r in results:
-        conn.execute(
-            "UPDATE jobs SET fit_score = ?, score_reasoning = ?, scored_at = ? WHERE url = ?",
-            (r["score"], f"{r['keywords']}\n{r['reasoning']}", now, r["url"]),
-        )
-    conn.commit()
+        # Rate limit to avoid 429s from Gemini free tier
+        if completed < len(jobs):
+            time.sleep(_SCORING_DELAY)
 
     elapsed = time.time() - t0
     log.info("Done: %d scored in %.1fs (%.1f jobs/sec)", len(results), elapsed, len(results) / elapsed if elapsed > 0 else 0)

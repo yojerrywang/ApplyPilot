@@ -60,8 +60,8 @@ _UPSTREAM: dict[str, str | None] = {
 # ---------------------------------------------------------------------------
 
 def _run_discover(workers: int = 1) -> dict:
-    """Stage: Job discovery — JobSpy, Workday, and smart-extract scrapers."""
-    stats: dict = {"jobspy": None, "workday": None, "smartextract": None}
+    """Stage: Job discovery — JobSpy, Workday, SmartExtract, and HiringCafe scrapers."""
+    stats: dict = {"jobspy": None, "workday": None, "smartextract": None, "hiringcafe": None}
 
     # JobSpy
     console.print("  [cyan]JobSpy full crawl...[/cyan]")
@@ -73,6 +73,17 @@ def _run_discover(workers: int = 1) -> dict:
         log.error("JobSpy crawl failed: %s", e)
         console.print(f"  [red]JobSpy error:[/red] {e}")
         stats["jobspy"] = f"error: {e}"
+
+    # HiringCafe scraper
+    console.print("  [cyan]Hiring.Cafe search crawl...[/cyan]")
+    try:
+        from applypilot.discovery.hiringcafe import run_discovery as hc_discovery
+        hc_discovery()
+        stats["hiringcafe"] = "ok"
+    except Exception as e:
+        log.error("HiringCafe scrape failed: %s", e)
+        console.print(f"  [red]Hiring.Cafe error:[/red] {e}")
+        stats["hiringcafe"] = f"error: {e}"
 
     # Workday corporate scraper
     console.print("  [cyan]Workday corporate scraper...[/cyan]")

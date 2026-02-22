@@ -25,10 +25,6 @@ log = logging.getLogger(__name__)
 # Provider detection
 # ---------------------------------------------------------------------------
 
-_GEMINI_KEY = os.environ.get("GEMINI_API_KEY", "")
-_OPENAI_KEY = os.environ.get("OPENAI_API_KEY", "")
-_LOCAL_URL = os.environ.get("LLM_URL", "")
-
 # Provider constants
 _PROVIDER_GEMINI = "gemini"
 _PROVIDER_OPENAI = "openai"
@@ -37,28 +33,31 @@ _PROVIDER_LOCAL = "local"
 
 def _detect_provider() -> tuple[str, str, str, str]:
     """Return (provider, base_url, model, api_key) based on environment variables."""
+    gemini_key = os.environ.get("GEMINI_API_KEY", "")
+    openai_key = os.environ.get("OPENAI_API_KEY", "")
+    local_url = os.environ.get("LLM_URL", "")
     model_override = os.environ.get("LLM_MODEL", "")
 
-    if _GEMINI_KEY and not _LOCAL_URL:
+    if gemini_key and not local_url:
         return (
             _PROVIDER_GEMINI,
             "https://generativelanguage.googleapis.com/v1beta",
             model_override or "gemini-2.0-flash",
-            _GEMINI_KEY,
+            gemini_key,
         )
 
-    if _OPENAI_KEY and not _LOCAL_URL:
+    if openai_key and not local_url:
         return (
             _PROVIDER_OPENAI,
             "https://api.openai.com/v1",
             model_override or "gpt-4o-mini",
-            _OPENAI_KEY,
+            openai_key,
         )
 
-    if _LOCAL_URL:
+    if local_url:
         return (
             _PROVIDER_LOCAL,
-            _LOCAL_URL.rstrip("/"),
+            local_url.rstrip("/"),
             model_override or "local-model",
             os.environ.get("LLM_API_KEY", ""),
         )
@@ -68,13 +67,12 @@ def _detect_provider() -> tuple[str, str, str, str]:
         "Set GEMINI_API_KEY, OPENAI_API_KEY, or LLM_URL in your environment."
     )
 
-
 # ---------------------------------------------------------------------------
 # Client
 # ---------------------------------------------------------------------------
 
 _MAX_RETRIES = 6
-_TIMEOUT = 120  # seconds
+_TIMEOUT = 300  # seconds (bumped for free OpenRouter queues)
 _RETRY_BASE_WAIT = 5  # seconds — longer base wait for Gemini free tier
 
 

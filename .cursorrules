@@ -1,0 +1,5 @@
+# AI Assistant Workflow Rules
+
+You have the ability to use workflows defined in `.agents/workflows/`. These workflows contain well-defined steps on how to achieve a particular thing.
+
+- If a workflow looks relevant, or the user explicitly uses a command like "save atp" or "commit", you must read the corresponding `.md` file in `.agents/workflows/` and execute its instructions exactly.

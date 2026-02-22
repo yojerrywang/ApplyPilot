@@ -49,6 +49,18 @@
 - Acceptance criteria:
   - Invalid setup is detected up-front with clear remediation.
 
+### 11) Role-track based tailoring (multi-role consistency)
+- Goal: Support separate resume-tailoring tracks per target role (e.g., Product Manager, Content Manager, Communications Specialist) to reduce large rewrites and hallucinations.
+- Scope:
+  - Add role-track config (keywords/titles, approved facts, banned claims, tone constraints, and max rewrite aggressiveness).
+  - Classify jobs into a role track before tailoring.
+  - Tailor only within that track’s approved facts and style constraints.
+  - Add validator rules to reject unsupported claims and over-stretched edits.
+- Acceptance criteria:
+  - Jobs are consistently assigned to a role track.
+  - Tailored resumes remain fact-consistent and role-consistent across applications.
+  - Hallucination/unsupported-claim rate drops versus current baseline.
+
 ## P3 — Quality, DX and Dependencies
 
 ### 7) Harden init/config flow

@@ -162,6 +162,23 @@ applypilot apply --reset-failed        # reset all failed jobs for retry
 applypilot apply --gen --url URL       # generate prompt file for manual debugging
 ```
 
+```
+
+---
+
+## AI Assistant Workflows & Shortcuts
+
+If you use an AI coding assistant (like Claude Code, Cursor, Windsurf, or Github Copilot), ApplyPilot includes custom instruction files (`CLAUDE.md`, `.cursorrules`) that teach your AI how to use custom workflow shortcuts.
+
+Workflows are defined as markdown instructions in the `.agents/workflows/` directory.
+
+### Available AI Shortcuts
+You can type these phrases directly to your AI assistant:
+- **"save atp"** (or `/save_atp`): Auto-instructs the AI to review the git diff, update `CHANGELOG.md`/`README.md`/`BACKLOG.md`, and generate a clean git commit.
+- **"commit"** (or `/commit`): Identical to `save atp`.
+
+You can create your own custom AI shortcuts by dropping a new `.md` file into `.agents/workflows/`.
+
 ---
 
 ## CLI Reference

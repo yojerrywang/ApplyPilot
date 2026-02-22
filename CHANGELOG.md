@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - Native `dedupe` pipeline stage to automatically remove semantic duplicate jobs (same title and company) prioritizing by fit score and recency. Run manually via `applypilot run dedupe`.
 - Session ID tracking (`APPLYPILOT_SESSION_ID`) to group discovered jobs by run batch. Auto-generated via CLI or overrideable via environment variables.
+- Custom AI coding assistant workflow instructions (`CLAUDE.md`, `.cursorrules`, `.agents/workflows/`) explicitly documented to enable smart automation triggers like `save atp`.
 - OpenRouter local LLM integration for scoring phase with JSON validation and graceful retries.
 - Comprehensive markdown `walkthrough.md` logic detailing pipeline execution strategies and anti-fabrication validator fixes.
 - **Title exclusion enforcement**: Jobs matching `exclude_titles` from `searches.yaml` are actively discarded during discovery before database entry.

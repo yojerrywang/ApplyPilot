@@ -207,7 +207,7 @@ async def _crawl_async(queries: list[dict], remote_only: bool, hours_old: int) -
                     mapped_jobs.append(job)
                     
             if mapped_jobs:
-                new, existing = store_jobs(conn, mapped_jobs)
+                new, existing = store_jobs(conn, mapped_jobs, site="hiring.cafe", strategy="playwright_intercept")
                 stats["new"] += new
                 stats["existing"] += existing
                 log.info(f"  Stored {new} new, {existing} existing.")

@@ -5,6 +5,18 @@ All notable changes to ApplyPilot will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+- Native `dedupe` pipeline stage to automatically remove semantic duplicate jobs (same title and company) prioritizing by fit score and recency. Run manually via `applypilot run dedupe`.
+- Session ID tracking (`APPLYPILOT_SESSION_ID`) to group discovered jobs by run batch. Auto-generated via CLI or overrideable via environment variables.
+- OpenRouter local LLM integration for scoring phase with JSON validation and graceful retries.
+- Comprehensive markdown `walkthrough.md` logic detailing pipeline execution strategies and anti-fabrication validator fixes.
+
+### Changed
+- **LLM Provider Migration**: Switched default recommended inference from local Ollama to OpenRouter API (using `google/gemini-2.0-flash-exp:free` or similar models).
+  - *Context:* The initial direct Gemini API implementation experienced instability, prompting a shift to local Ollama models (e.g., `gemma2:2b`, `deepseek-r1:32b`, `llama3.1:8b`). However, local edge models either failed strict JSON validation/anti-fabrication checks during the resume tailoring stage or were far too slow for the massive context size (entire resume + full job description). OpenRouter provides the speed and reliability of robust API models while circumventing direct provider limitations.
+
 ## [0.2.0] - 2026-02-17
 
 ### Added

@@ -28,7 +28,7 @@ pip install applypilot
 pip install --no-deps python-jobspy    # separate install (broken numpy pin in metadata)
 pip install pydantic tls-client requests markdownify regex  # jobspy runtime deps skipped by --no-deps
 applypilot init          # one-time setup: resume, profile, preferences, API keys
-applypilot run           # discover > enrich > score > tailor > cover letters
+applypilot run           # discover > dedupe > enrich > score > tailor > cover letters
 applypilot run -w 4      # same but parallel (4 threads for discovery/enrichment)
 applypilot apply         # autonomous browser-driven submission
 applypilot apply -w 3    # parallel apply (3 Chrome instances)
@@ -55,12 +55,13 @@ Runs stages 1-5: discovers jobs, scores them, tailors your resume, generates cov
 
 | Stage | What Happens |
 |-------|-------------|
-| **1. Discover** | Scrapes 5 job boards (Indeed, LinkedIn, Glassdoor, ZipRecruiter, Google Jobs) + 48 Workday employer portals + 30 direct career sites |
-| **2. Enrich** | Fetches full job descriptions via JSON-LD, CSS selectors, or AI-powered extraction |
-| **3. Score** | AI rates every job 1-10 based on your resume and preferences. Only high-fit jobs proceed |
-| **4. Tailor** | AI rewrites your resume per job: reorganizes, emphasizes relevant experience, adds keywords. Never fabricates |
-| **5. Cover Letter** | AI generates a targeted cover letter per job |
-| **6. Auto-Apply** | Claude Code navigates application forms, fills fields, uploads documents, answers questions, and submits |
+| **1. Discover** | Scrapes 5 job boards (Indeed, LinkedIn, Glassdoor, ZipRecruiter, Google Jobs) + 48 Workday employer portals + 30 direct career sites. Automatically assigns a `session_id` to group batches. |
+| **2. Dedupe** | Removes semantic duplicates (same title and company) prioritizing the highest fit score and most recent discovery. |
+| **3. Enrich** | Fetches full job descriptions via JSON-LD, CSS selectors, or AI-powered extraction |
+| **4. Score** | AI rates every job 1-10 based on your resume and preferences. Only high-fit jobs proceed |
+| **5. Tailor** | AI rewrites your resume per job: reorganizes, emphasizes relevant experience, adds keywords. Never fabricates |
+| **6. Cover Letter** | AI generates a targeted cover letter per job |
+| **7. Auto-Apply** | Claude Code navigates application forms, fills fields, uploads documents, answers questions, and submits |
 
 Each stage is independent. Run them all or pick what you need.
 
@@ -124,7 +125,10 @@ API keys and runtime config: `GEMINI_API_KEY`, `LLM_MODEL`, `CAPSOLVER_API_KEY` 
 ## How Stages Work
 
 ### Discover
-Queries Indeed, LinkedIn, Glassdoor, ZipRecruiter, Google Jobs via JobSpy. Scrapes 48 Workday employer portals (configurable in `employers.yaml`). Hits 30 direct career sites with custom extractors. Deduplicates by URL.
+Queries Indeed, LinkedIn, Glassdoor, ZipRecruiter, Google Jobs via JobSpy. Scrapes 48 Workday employer portals (configurable in `employers.yaml`). Hits 30 direct career sites with custom extractors. Automatically tags the batch with a `session_id`.
+
+### Dedupe
+Scans the database and automatically purges semantic duplicates (jobs that have different URLs but the exact same title and company name), keeping the ones with the highest fit score.
 
 ### Enrich
 Visits each job URL and extracts the full description. 3-tier cascade: JSON-LD structured data, then CSS selector patterns, then AI-powered extraction for unknown layouts.

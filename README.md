@@ -179,6 +179,8 @@ You can type these phrases directly to your AI assistant:
 
 You can create your own custom AI shortcuts by dropping a new `.md` file into `.agents/workflows/`.
 
+For end-to-end documentation governance (Roadmap → Backlog → Changelog → README feedback loop), see `ROADMAP.md`.
+
 ---
 
 ## CLI Reference

@@ -63,6 +63,9 @@ def _build_tailor_prompt(profile: dict) -> str:
     education = profile.get("experience", {})
     education_level = education.get("education_level", "")
 
+    from applypilot.scoring.validator import BANNED_WORDS
+    banned_str = ", ".join(BANNED_WORDS)
+
     return f"""You are a senior technical recruiter rewriting a resume to get this person an interview.
 
 Take the base resume and job description. Return a tailored resume as a JSON object.
@@ -88,7 +91,7 @@ SKILLS: Reorder each category so the job's must-haves appear first.
 
 Reframe EVERY bullet for this role. Same real work, different angle. Every bullet must be reworded. Never copy verbatim.
 
-PROJECTS: Reorder by relevance. Drop irrelevant projects entirely.
+PROJECTS: Reorder by relevance. Drop irrelevant projects entirely. DO NOT INVENT NEW PROJECTS. Use ONLY the projects from the original resume.
 
 BULLETS: Strong verb + what you built + quantified impact. Vary verbs (Built, Designed, Implemented, Reduced, Automated, Deployed, Operated, Optimized). Most relevant first. Max 4 per section.
 
@@ -96,11 +99,11 @@ BULLETS: Strong verb + what you built + quantified impact. Vary verbs (Built, De
 - Write like a real engineer. Short, direct.
 - GOOD: "Automated financial reporting with Python + API integrations, cut processing time from 10 hours to 2"
 - BAD: "Leveraged cutting-edge AI technologies to drive transformative operational efficiencies"
-- NEVER use: passionate, dedicated, leveraging, spearheaded, robust, cutting-edge, proven track record, strong track record, eager, stakeholders, synergy, seamless, streamlined, end-to-end, detail-oriented, results-driven, I am confident, I believe, I am excited
+- NEVER use these words/phrases: {banned_str}
 - No em dashes. Use commas, periods, or hyphens.
 
 ## HARD RULES:
-- Do NOT invent work, companies, degrees, or certifications
+- Do NOT invent work, companies, degrees, certifications, or projects.
 - Do NOT change real numbers ({metrics_str})
 - Preserved companies: {companies_str} -- names stay as-is
 - Preserved school: {school}
@@ -432,7 +435,7 @@ def tailor_resume(
 
 # ── Batch Entry Point ────────────────────────────────────────────────────
 
-def run_tailoring(min_score: int = 7, limit: int = 20) -> dict:
+def run_tailoring(min_score: int = 7, limit: int = 1000) -> dict:
     """Generate tailored resumes for high-scoring jobs.
 
     Args:

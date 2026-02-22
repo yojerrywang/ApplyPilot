@@ -26,7 +26,7 @@ console = Console()
 log = logging.getLogger(__name__)
 
 # Valid pipeline stages (in execution order)
-VALID_STAGES = ("discover", "enrich", "score", "tailor", "cover", "pdf")
+VALID_STAGES = ("discover", "dedupe", "enrich", "score", "tailor", "cover", "pdf")
 
 
 # ---------------------------------------------------------------------------
@@ -35,6 +35,13 @@ VALID_STAGES = ("discover", "enrich", "score", "tailor", "cover", "pdf")
 
 def _bootstrap() -> None:
     """Common setup: load env, create dirs, init DB."""
+    import os
+    from datetime import datetime
+    
+    # Generate a unique session ID for this run if not already set
+    if not os.environ.get("APPLYPILOT_SESSION_ID"):
+        os.environ["APPLYPILOT_SESSION_ID"] = datetime.now().strftime("%Y%m%d_%H%M%S")
+
     from applypilot.config import load_env, ensure_dirs
     from applypilot.database import init_db
 

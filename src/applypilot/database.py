@@ -97,6 +97,7 @@ def init_db(db_path: Path | str | None = None) -> sqlite3.Connection:
             location              TEXT,
             site                  TEXT,
             strategy              TEXT,
+            session_id            TEXT,
             discovered_at         TEXT,
 
             -- Enrichment stage (detail_scraper)
@@ -152,6 +153,7 @@ _ALL_COLUMNS: dict[str, str] = {
     "location": "TEXT",
     "site": "TEXT",
     "strategy": "TEXT",
+    "session_id": "TEXT",
     "discovered_at": "TEXT",
     # Enrichment
     "full_description": "TEXT",
@@ -340,6 +342,8 @@ def store_jobs(conn: sqlite3.Connection, jobs: list[dict],
         Tuple of (new_count, duplicate_count).
     """
     now = datetime.now(timezone.utc).isoformat()
+    import os
+    session_id = os.environ.get("APPLYPILOT_SESSION_ID")
     new = 0
     existing = 0
 
@@ -349,10 +353,10 @@ def store_jobs(conn: sqlite3.Connection, jobs: list[dict],
             continue
         try:
             conn.execute(
-                "INSERT INTO jobs (url, title, salary, description, location, site, strategy, discovered_at) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                "INSERT INTO jobs (url, title, salary, description, location, site, strategy, session_id, discovered_at) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (url, job.get("title"), job.get("salary"), job.get("description"),
-                 job.get("location"), site, strategy, now),
+                 job.get("location"), site, strategy, session_id, now),
             )
             new += 1
         except sqlite3.IntegrityError:
@@ -365,7 +369,7 @@ def store_jobs(conn: sqlite3.Connection, jobs: list[dict],
 def get_jobs_by_stage(conn: sqlite3.Connection | None = None,
                       stage: str = "discovered",
                       min_score: int | None = None,
-                      limit: int = 100) -> list[dict]:
+                      limit: int = 1000) -> list[dict]:
     """Fetch jobs filtered by pipeline stage.
 
     Args:
@@ -422,3 +426,46 @@ def get_jobs_by_stage(conn: sqlite3.Connection | None = None,
         columns = rows[0].keys()
         return [dict(zip(columns, row)) for row in rows]
     return []
+
+
+def remove_semantic_duplicates(conn: sqlite3.Connection | None = None) -> int:
+    """Remove semantic duplicates (same title and company) from the database.
+
+    Keeps the one with the highest fit_score or most recent discovery date.
+    
+    Args:
+        conn: Target connection. Uses default if None.
+
+    Returns:
+        Number of duplicate rows deleted.
+    """
+    if conn is None:
+        conn = get_connection()
+
+    query = """
+    WITH RankedJobs AS (
+        SELECT url,
+               ROW_NUMBER() OVER (
+                   PARTITION BY LOWER(TRIM(site)), LOWER(TRIM(title)) 
+                   ORDER BY 
+                       COALESCE(fit_score, 0) DESC, 
+                       discovered_at DESC
+               ) as rn
+        FROM jobs
+    )
+    SELECT url FROM RankedJobs WHERE rn > 1;
+    """
+    
+    rows = conn.execute(query).fetchall()
+    urls_to_delete = [row[0] for row in rows]
+    
+    if not urls_to_delete:
+        return 0
+
+    placeholders = ','.join('?' * len(urls_to_delete))
+    delete_query = f"DELETE FROM jobs WHERE url IN ({placeholders})"
+    
+    cursor = conn.execute(delete_query, urls_to_delete)
+    conn.commit()
+    
+    return cursor.rowcount

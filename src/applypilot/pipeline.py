@@ -32,10 +32,11 @@ console = Console()
 # Stage definitions
 # ---------------------------------------------------------------------------
 
-STAGE_ORDER = ("discover", "enrich", "score", "tailor", "cover", "pdf")
+STAGE_ORDER = ("discover", "dedupe", "enrich", "score", "tailor", "cover", "pdf")
 
 STAGE_META: dict[str, dict] = {
     "discover": {"desc": "Job discovery (JobSpy + Workday + smart extract)"},
+    "dedupe":   {"desc": "Remove semantic duplicates (same title and company)"},
     "enrich":   {"desc": "Detail enrichment (full descriptions + apply URLs)"},
     "score":    {"desc": "LLM scoring (fit 1-10)"},
     "tailor":   {"desc": "Resume tailoring (LLM + validation)"},
@@ -47,7 +48,8 @@ STAGE_META: dict[str, dict] = {
 # it has no remaining pending work.
 _UPSTREAM: dict[str, str | None] = {
     "discover": None,
-    "enrich":   "discover",
+    "dedupe":   "discover",
+    "enrich":   "dedupe",
     "score":    "enrich",
     "tailor":   "score",
     "cover":    "tailor",
@@ -58,6 +60,20 @@ _UPSTREAM: dict[str, str | None] = {
 # ---------------------------------------------------------------------------
 # Individual stage runners
 # ---------------------------------------------------------------------------
+
+def _run_dedupe(workers: int = 1) -> dict:
+    """Stage: Remove semantic duplicates."""
+    console.print("  [cyan]Removing semantic duplicates...[/cyan]")
+    try:
+        from applypilot.database import remove_semantic_duplicates
+        removed = remove_semantic_duplicates()
+        log.info("Removed %d duplicates.", removed)
+        return {"removed": removed}
+    except Exception as e:
+        log.error("Deduplication failed: %s", e)
+        console.print(f"  [red]Deduplication error:[/red] {e}")
+        return {"error": str(e)}
+
 
 def _run_discover(workers: int = 1) -> dict:
     """Stage: Job discovery — JobSpy, Workday, SmartExtract, and HiringCafe scrapers."""
@@ -168,6 +184,7 @@ def _run_pdf() -> dict:
 # Map stage names to their runner functions
 _STAGE_RUNNERS: dict[str, callable] = {
     "discover": _run_discover,
+    "dedupe":   _run_dedupe,
     "enrich":   _run_enrich,
     "score":    _run_score,
     "tailor":   _run_tailor,

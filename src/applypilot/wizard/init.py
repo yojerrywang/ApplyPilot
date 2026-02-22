@@ -10,6 +10,7 @@ Interactive flow that creates ~/.applypilot/ with:
 from __future__ import annotations
 
 import json
+import os
 import shutil
 from pathlib import Path
 
@@ -93,7 +94,6 @@ def _setup_profile() -> dict:
         "city": Prompt.ask("City"),
         "country": Prompt.ask("Country"),
         "linkedin_url": Prompt.ask("LinkedIn URL", default=""),
-        "password": Prompt.ask("Job site password (used for login walls during auto-apply)", password=True, default=""),
     }
 
     # -- Work Authorization --
@@ -164,6 +164,8 @@ def _setup_profile() -> dict:
 
     # Save
     PROFILE_PATH.write_text(json.dumps(profile, indent=2, ensure_ascii=False), encoding="utf-8")
+    if os.name != "nt":
+        PROFILE_PATH.chmod(0o600)
     console.print(f"\n[green]Profile saved to {PROFILE_PATH}[/green]")
     return profile
 
@@ -260,6 +262,8 @@ def _setup_ai_features() -> None:
 
     env_lines.append("")
     ENV_PATH.write_text("\n".join(env_lines), encoding="utf-8")
+    if os.name != "nt":
+        ENV_PATH.chmod(0o600)
     console.print(f"[green]AI configuration saved to {ENV_PATH}[/green]")
 
 
@@ -303,6 +307,8 @@ def _setup_auto_apply() -> None:
                 )
         else:
             ENV_PATH.write_text(f"# ApplyPilot configuration\nCAPSOLVER_API_KEY={capsolver_key}\n", encoding="utf-8")
+        if os.name != "nt":
+            ENV_PATH.chmod(0o600)
         console.print("[green]CapSolver key saved.[/green]")
     else:
         console.print("[dim]Skipped. Add CAPSOLVER_API_KEY to .env later if needed.[/dim]")

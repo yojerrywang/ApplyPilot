@@ -115,6 +115,13 @@ Job search queries, target titles, locations, boards. Run multiple searches with
 ### `.env`
 API keys and runtime config: `GEMINI_API_KEY`, `LLM_MODEL`, `CAPSOLVER_API_KEY` (optional).
 
+## Security & Privacy Notes
+
+- ApplyPilot no longer stores a job-site login password in `profile.json`.
+- Auto-apply prompts do not embed a plaintext account password.
+- On macOS/Linux, `applypilot init` now applies restrictive permissions to local secrets (`.env`, `profile.json`) and app data directories.
+- If a site requires login credentials, prefer your browser password manager/autofill over putting credentials in project files.
+
 ### Package configs (shipped with ApplyPilot)
 - `config/employers.yaml` - Workday employer registry (48 preconfigured)
 - `config/sites.yaml` - Direct career sites (30+), blocked sites, base URLs, manual ATS domains

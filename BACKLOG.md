@@ -1,5 +1,13 @@
 # Backlog
 
+## Completed (security-hardening)
+
+### ✅ Credential and local data hardening
+- Removed password collection from setup profile flow.
+- Removed plaintext password embedding from auto-apply prompt generation.
+- Parameterized blocked-site and blocked-pattern SQL filtering in apply job acquisition.
+- Tightened local file permissions for sensitive artifacts on non-Windows systems.
+
 ## P0 — Filters Consistency + Enforcement
 
 ### 1) Unify location filter schema across pipeline

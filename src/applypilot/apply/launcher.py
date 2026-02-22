@@ -116,21 +116,32 @@ def acquire_job(target_url: str | None = None, min_score: int = 7,
             """, (target_url, target_url, like, like)).fetchone()
         else:
             blocked_sites, blocked_patterns = _load_blocked()
-            site_filter = " AND ".join(f"site != '{s}'" for s in blocked_sites) if blocked_sites else "1=1"
-            url_filter = " AND ".join(f"url NOT LIKE '{p}'" for p in blocked_patterns) if blocked_patterns else "1=1"
+            where_clauses = [
+                "tailored_resume_path IS NOT NULL",
+                "(apply_status IS NULL OR apply_status = 'failed')",
+                "(apply_attempts IS NULL OR apply_attempts < ?)",
+                "fit_score >= ?",
+            ]
+            params: list = [config.DEFAULTS["max_apply_attempts"], min_score]
+
+            if blocked_sites:
+                placeholders = ", ".join("?" for _ in blocked_sites)
+                where_clauses.append(f"site NOT IN ({placeholders})")
+                params.extend(sorted(blocked_sites))
+
+            for pattern in blocked_patterns:
+                where_clauses.append("url NOT LIKE ?")
+                params.append(pattern)
+
+            where_sql = "\n                  AND ".join(where_clauses)
             row = conn.execute(f"""
                 SELECT url, title, site, application_url, tailored_resume_path,
                        fit_score, location, full_description, cover_letter_path
                 FROM jobs
-                WHERE tailored_resume_path IS NOT NULL
-                  AND (apply_status IS NULL OR apply_status = 'failed')
-                  AND (apply_attempts IS NULL OR apply_attempts < {config.DEFAULTS["max_apply_attempts"]})
-                  AND fit_score >= ?
-                  AND {site_filter}
-                  AND {url_filter}
+                WHERE {where_sql}
                 ORDER BY fit_score DESC, url
                 LIMIT 1
-            """, (min_score,)).fetchone()
+            """, params).fetchone()
 
         if not row:
             conn.rollback()

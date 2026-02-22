@@ -17,6 +17,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **LLM Provider Migration**: Switched default recommended inference from local Ollama to OpenRouter API (using `google/gemini-2.0-flash-exp:free` or similar models).
   - *Context:* The initial direct Gemini API implementation experienced instability, prompting a shift to local Ollama models (e.g., `gemma2:2b`, `deepseek-r1:32b`, `llama3.1:8b`). However, local edge models either failed strict JSON validation/anti-fabrication checks during the resume tailoring stage or were far too slow for the massive context size (entire resume + full job description). OpenRouter provides the speed and reliability of robust API models while circumventing direct provider limitations.
 
+### Security
+- Removed collection/storage of job-site account password from `applypilot init` profile flow.
+- Removed plaintext password from auto-apply prompt instructions to reduce credential exposure.
+- Parameterized blocked-site and blocked-pattern SQL filters in apply job acquisition to avoid config-driven query interpolation.
+- Hardened local permissions on non-Windows systems: sensitive files (`.env`, `profile.json`) use `600`, app data directories use `700`.
+
 ## [0.2.0] - 2026-02-17
 
 ### Added

@@ -89,6 +89,11 @@ def ensure_dirs():
     """Create all required directories."""
     for d in [APP_DIR, TAILORED_DIR, COVER_LETTER_DIR, LOG_DIR, CHROME_WORKER_DIR, APPLY_WORKER_DIR]:
         d.mkdir(parents=True, exist_ok=True)
+        if os.name != "nt":
+            d.chmod(0o700)
+
+    if os.name != "nt" and ENV_PATH.exists():
+        ENV_PATH.chmod(0o600)
 
 
 def load_profile() -> dict:

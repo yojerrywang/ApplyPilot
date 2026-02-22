@@ -71,6 +71,41 @@
 - Acceptance criteria:
   - Invalid setup is detected up-front with clear remediation.
 
+## P3 — Quality, DX and Dependencies
+
+### 7) Harden init/config flow
+- Goal: Fewer failed runs due to missing or invalid config.
+- Scope:
+  - Validate `profile.json`, `searches.yaml`, and `.env` (required keys, types, non-empty where needed).
+  - Provide clear error messages and, where possible, defaults or remediation hints.
+  - Consider `applypilot doctor` (see P2) to run these checks on demand.
+- Acceptance criteria:
+  - Invalid or incomplete setup is caught early with actionable messages.
+
+### 8) Observability: logging and verbose mode
+- Goal: Make discovery, scoring, and apply stages debuggable without reading code.
+- Scope:
+  - Add structured logging (or a single `--verbose` flag) for key stages: discovery counts per source, score distribution, apply success/fail reasons.
+  - Ensure logs don’t leak PII or API keys.
+- Acceptance criteria:
+  - Users and contributors can trace why jobs were included, scored, or skipped.
+
+### 9) Tests for core pipeline logic
+- Goal: Protect refactors and build confidence in scoring, tailoring, and dedupe.
+- Scope:
+  - Unit or integration tests for: dedupe semantics, score threshold behavior, tailor output structure (e.g. resume_facts preserved).
+  - Tests can use fixtures or small canned jobs/profiles.
+- Acceptance criteria:
+  - CI runs tests; critical path changes are covered.
+
+### 10) JobSpy / dependency story
+- Goal: Reduce install friction and confusion.
+- Scope:
+  - Document the current `--no-deps` + manual jobspy (and runtime deps) flow in an Install or Troubleshooting section.
+  - Investigate upstream fix or optional extra (e.g. `pip install applypilot[jobspy]`) so one command works where possible.
+- Acceptance criteria:
+  - Install instructions are clear; medium-term path to simpler install is documented or implemented.
+
 ## Notes
 - Prioritize P0 items first; they directly address current filtering confusion and wasted downstream compute.
 - Keep changes backward-compatible where possible to avoid breaking existing user configs.

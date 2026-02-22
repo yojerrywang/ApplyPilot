@@ -50,11 +50,8 @@ UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
 
 def _load_location_filter(search_cfg: dict | None = None):
     """Load location accept/reject lists from search config."""
-    if search_cfg is None:
-        search_cfg = config.load_search_config()
-    accept = search_cfg.get("location_accept", [])
-    reject = search_cfg.get("location_reject_non_remote", [])
-    return accept, reject
+    prefs = get_location_preferences()
+    return prefs["accept"], [] if prefs["reject_non_remote"] else []
 
 
 def _location_ok(location: str | None, accept: list[str], reject: list[str]) -> bool:
@@ -103,6 +100,15 @@ def _store_jobs_filtered(
         url = job.get("url")
         if not url:
             continue
+            
+        title = job.get("title")
+        if title:
+            excluded = get_excluded_titles()
+            title_lower = title.lower()
+            if any(ext in title_lower for ext in excluded):
+                log.debug("Skipping [%s] %s (excluded title)", site, title)
+                continue
+                
         if not _location_ok(job.get("location"), accept_locs, reject_locs):
             filtered += 1
             continue

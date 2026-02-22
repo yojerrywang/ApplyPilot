@@ -88,7 +88,7 @@ def _make_mcp_config(cdp_port: int) -> dict:
 # ---------------------------------------------------------------------------
 
 def acquire_job(target_url: str | None = None, min_score: int = 7,
-                worker_id: int = 0) -> dict | None:
+                worker_id: int = 0, session_id: str | None = None) -> dict | None:
     """Atomically acquire the next job to apply to.
 
     Args:
@@ -132,6 +132,10 @@ def acquire_job(target_url: str | None = None, min_score: int = 7,
             for pattern in blocked_patterns:
                 where_clauses.append("url NOT LIKE ?")
                 params.append(pattern)
+
+            if session_id:
+                where_clauses.append("session_id = ?")
+                params.append(session_id)
 
             where_sql = "\n                  AND ".join(where_clauses)
             row = conn.execute(f"""
@@ -550,7 +554,8 @@ def _is_permanent_failure(result: str) -> bool:
 def worker_loop(worker_id: int = 0, limit: int = 1,
                 target_url: str | None = None,
                 min_score: int = 7, headless: bool = False,
-                model: str = "sonnet", dry_run: bool = False) -> tuple[int, int]:
+                model: str = "sonnet", dry_run: bool = False,
+                session_id: str | None = None) -> tuple[int, int]:
     """Run jobs sequentially until limit is reached or queue is empty.
 
     Args:
@@ -580,7 +585,7 @@ def worker_loop(worker_id: int = 0, limit: int = 1,
                      last_action="waiting for job", actions=0)
 
         job = acquire_job(target_url=target_url, min_score=min_score,
-                          worker_id=worker_id)
+                          worker_id=worker_id, session_id=session_id)
         if not job:
             if not continuous:
                 add_event(f"[W{worker_id}] Queue empty")
@@ -655,7 +660,8 @@ def worker_loop(worker_id: int = 0, limit: int = 1,
 def main(limit: int = 1, target_url: str | None = None,
          min_score: int = 7, headless: bool = False, model: str = "sonnet",
          dry_run: bool = False, continuous: bool = False,
-         poll_interval: int = 60, workers: int = 1) -> None:
+         poll_interval: int = 60, workers: int = 1,
+         session_id: str | None = None) -> None:
     """Launch the apply pipeline.
 
     Args:
@@ -739,6 +745,7 @@ def main(limit: int = 1, target_url: str | None = None,
                     headless=headless,
                     model=model,
                     dry_run=dry_run,
+                    session_id=session_id,
                 )
             else:
                 # Multi-worker — distribute limit across workers
@@ -762,6 +769,7 @@ def main(limit: int = 1, target_url: str | None = None,
                             headless=headless,
                             model=model,
                             dry_run=dry_run,
+                            session_id=session_id,
                         ): i
                         for i in range(workers)
                     }

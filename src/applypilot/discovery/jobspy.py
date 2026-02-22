@@ -15,6 +15,7 @@ from datetime import datetime, timezone
 from jobspy import scrape_jobs
 
 from applypilot import config
+from applypilot.config import get_excluded_titles, get_location_preferences
 from applypilot.database import get_connection, init_db, store_jobs
 
 log = logging.getLogger(__name__)
@@ -77,13 +78,9 @@ def _scrape_with_retry(kwargs: dict, max_retries: int = 2, backoff: float = 5.0)
 # -- Location filtering ------------------------------------------------------
 
 def _load_location_config(search_cfg: dict) -> tuple[list[str], list[str]]:
-    """Extract accept/reject location lists from search config.
-
-    Falls back to sensible defaults if not defined in the YAML.
-    """
-    accept = search_cfg.get("location_accept", [])
-    reject = search_cfg.get("location_reject_non_remote", [])
-    return accept, reject
+    """Extract accept/reject location lists from unified config."""
+    prefs = get_location_preferences()
+    return prefs["accept"], [] if prefs["reject_non_remote"] else []
 
 
 def _location_ok(location: str | None, accept: list[str], reject: list[str]) -> bool:
@@ -131,6 +128,13 @@ def store_jobspy_results(conn: sqlite3.Connection, df, source_label: str) -> tup
         title = str(row.get("title", "")) if str(row.get("title", "")) != "nan" else None
         company = str(row.get("company", "")) if str(row.get("company", "")) != "nan" else None
         location_str = str(row.get("location", "")) if str(row.get("location", "")) != "nan" else None
+
+        # Exclude blacklisted titles
+        if title:
+            excluded = get_excluded_titles()
+            title_lower = title.lower()
+            if any(ext in title_lower for ext in excluded):
+                continue
 
         # Build salary string from min/max
         salary = None

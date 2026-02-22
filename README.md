@@ -185,6 +185,17 @@ applypilot dashboard                    # Open HTML results dashboard
 
 ---
 
+## Recommended workflow and operating tips
+
+- **Start with discovery + tailoring only.** Run `applypilot run` and submit applications yourself at first. Once you’re happy with scoring and tailored resumes, enable auto-apply with `applypilot apply`.
+- **Tune the score threshold.** Use `applypilot run --min-score 8` (or `7`) so only strong matches get tailored. Adjust after reviewing a few batches.
+- **Use parallel workers when scaling.** Once your searches and profile are stable, use `applypilot run -w 4` and `applypilot apply -w 3` to speed up discovery and submissions.
+- **Keep `profile.json` and resume facts accurate.** Better profile data improves scoring and tailoring. The AI preserves your resume facts and does not fabricate; keep them truthful.
+- **Dry-run before real apply.** Use `applypilot apply --dry-run` to watch form-filling without submitting, and to catch issues early.
+- **CAPTCHAs.** If auto-apply hits many CAPTCHAs, adding a CapSolver API key can help; otherwise those applications fail gracefully.
+
+---
+
 ## Contributing
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for development setup, coding standards, and PR guidelines.

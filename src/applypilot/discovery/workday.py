@@ -20,8 +20,8 @@ from html.parser import HTMLParser
 import yaml
 
 from applypilot import config
-from applypilot.config import CONFIG_DIR
-from applypilot.database import get_connection, init_db
+from applypilot.config import CONFIG_DIR, get_excluded_titles, get_location_preferences
+from applypilot.database import get_connection, init_db, store_jobs
 
 log = logging.getLogger(__name__)
 
@@ -42,12 +42,8 @@ def load_employers() -> dict:
 
 def _load_location_filter(search_cfg: dict | None = None):
     """Load location accept/reject lists from search config."""
-    if search_cfg is None:
-        search_cfg = config.load_search_config()
-
-    accept = search_cfg.get("location_accept", [])
-    reject = search_cfg.get("location_reject_non_remote", [])
-    return accept, reject
+    prefs = get_location_preferences()
+    return prefs["accept"], [] if prefs["reject_non_remote"] else []
 
 
 def _location_ok(location: str | None, accept: list[str], reject: list[str]) -> bool:

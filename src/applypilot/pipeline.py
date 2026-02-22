@@ -116,7 +116,7 @@ def _run_discover(workers: int = 1) -> dict:
     console.print("  [cyan]Smart extract (AI-powered scraping)...[/cyan]")
     try:
         from applypilot.discovery.smartextract import run_smart_extract
-        run_smart_extract(workers=workers)
+        run_smart_extract(workers=workers, session_id=session_id)
         stats["smartextract"] = "ok"
     except Exception as e:
         log.error("Smart extract failed: %s", e)
@@ -289,6 +289,7 @@ def _run_stage_streaming(
     stop_event: threading.Event,
     min_score: int = 7,
     workers: int = 1,
+    session_id: str | None = None,
 ) -> None:
     """Run a single stage in streaming mode: loop until upstream done + no work.
 
@@ -349,7 +350,7 @@ def _run_stage_streaming(
 # Pipeline orchestrators
 # ---------------------------------------------------------------------------
 
-def _run_sequential(ordered: list[str], min_score: int, workers: int = 1) -> dict:
+def _run_sequential(ordered: list[str], min_score: int, workers: int = 1, session_id: str | None = None) -> dict:
     """Execute stages one at a time (original behavior)."""
     results: list[dict] = []
     errors: dict[str, str] = {}
@@ -371,6 +372,8 @@ def _run_sequential(ordered: list[str], min_score: int, workers: int = 1) -> dic
                 kwargs["min_score"] = min_score
             if name in ("discover", "enrich"):
                 kwargs["workers"] = workers
+            if name == "discover":
+                kwargs["session_id"] = session_id
             result = runner(**kwargs)
             elapsed = time.time() - t0
 
@@ -401,7 +404,7 @@ def _run_sequential(ordered: list[str], min_score: int, workers: int = 1) -> dic
     return {"stages": results, "errors": errors, "elapsed": total_elapsed}
 
 
-def _run_streaming(ordered: list[str], min_score: int, workers: int = 1) -> dict:
+def _run_streaming(ordered: list[str], min_score: int, workers: int = 1, session_id: str | None = None) -> dict:
     """Execute stages concurrently with DB as conveyor belt."""
     tracker = _StageTracker()
     stop_event = threading.Event()
@@ -423,7 +426,7 @@ def _run_streaming(ordered: list[str], min_score: int, workers: int = 1) -> dict
         start_times[name] = time.time()
         t = threading.Thread(
             target=_run_stage_streaming,
-            args=(name, tracker, stop_event, min_score, workers),
+            args=(name, tracker, stop_event, min_score, workers, session_id),
             name=f"stage-{name}",
             daemon=True,
         )
@@ -470,6 +473,7 @@ def run_pipeline(
     dry_run: bool = False,
     stream: bool = False,
     workers: int = 1,
+    session_id: str | None = None,
 ) -> dict:
     """Run pipeline stages.
 

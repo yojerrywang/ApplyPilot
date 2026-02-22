@@ -94,6 +94,7 @@ def run(
     workers: int = typer.Option(1, "--workers", "-w", help="Parallel threads for discovery/enrichment stages."),
     stream: bool = typer.Option(False, "--stream", help="Run stages concurrently (streaming mode)."),
     dry_run: bool = typer.Option(False, "--dry-run", help="Preview stages without executing."),
+    session_id: Optional[str] = typer.Option(None, "--session-id", help="Session ID to filter by batch."),
 ) -> None:
     """Run pipeline stages: discover, enrich, score, tailor, cover, pdf."""
     _bootstrap()
@@ -123,6 +124,7 @@ def run(
         dry_run=dry_run,
         stream=stream,
         workers=workers,
+        session_id=session_id,
     )
 
     if result.get("errors"):
@@ -144,6 +146,7 @@ def apply(
     mark_failed: Optional[str] = typer.Option(None, "--mark-failed", help="Manually mark a job URL as failed (provide URL)."),
     fail_reason: Optional[str] = typer.Option(None, "--fail-reason", help="Reason for --mark-failed."),
     reset_failed: bool = typer.Option(False, "--reset-failed", help="Reset all failed jobs for retry."),
+    session_id: Optional[str] = typer.Option(None, "--session-id", help="Session ID to filter by batch."),
 ) -> None:
     """Launch auto-apply to submit job applications."""
     _bootstrap()
@@ -240,17 +243,20 @@ def apply(
         dry_run=dry_run,
         continuous=continuous,
         workers=workers,
+        session_id=session_id,
     )
 
 
 @app.command()
-def status() -> None:
+def status(
+    session_id: Optional[str] = typer.Option(None, "--session-id", help="Session ID to filter by batch.")
+) -> None:
     """Show pipeline statistics from the database."""
     _bootstrap()
 
     from applypilot.database import get_stats
 
-    stats = get_stats()
+    stats = get_stats(session_id=session_id)
 
     console.print("\n[bold]ApplyPilot Pipeline Status[/bold]\n")
 
@@ -281,9 +287,9 @@ def status() -> None:
         dist_table.add_column("Count", justify="right")
         dist_table.add_column("Bar")
 
-        max_count = max(count for _, count in stats["score_distribution"]) or 1
+        max_count = max(int(count) for _, count in stats["score_distribution"]) or 1
         for score, count in stats["score_distribution"]:
-            bar_len = int(count / max_count * 30)
+            bar_len = int(int(count) / max_count * 30)
             if score >= 7:
                 color = "green"
             elif score >= 5:

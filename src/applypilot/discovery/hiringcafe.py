@@ -97,6 +97,12 @@ def _map_job(raw_job: dict) -> dict | None:
         if not title or not company or not url:
             return None
             
+        excluded = get_excluded_titles()
+        title_lower = title.lower()
+        if any(ext in title_lower for ext in excluded):
+            log.debug("Skipping %s (excluded title)", title)
+            return None
+            
         desc = raw_job.get("description", "")
         if not desc and "descriptionHtml" in raw_job:
             desc = raw_job["descriptionHtml"]

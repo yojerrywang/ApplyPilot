@@ -118,6 +118,37 @@ def load_search_config() -> dict:
     return yaml.safe_load(SEARCH_CONFIG_PATH.read_text(encoding="utf-8"))
 
 
+def get_location_preferences() -> dict:
+    """Retrieve normalized location preferences from profile and tracking defaults.
+
+    Returns:
+        dict with keys:
+            accept (list of strings, e.g. ["Remote", "New York"])
+            reject_non_remote (bool)
+    """
+    profile = load_profile()
+    
+    # 1. Check for the old root-level keys first (backward compatibility)
+    if "location_accept" in profile or "location_reject_non_remote" in profile:
+        return {
+            "accept": profile.get("location_accept", ["Remote"]),
+            "reject_non_remote": profile.get("location_reject_non_remote", False)
+        }
+        
+    # 2. Otherwise drop down to the new nested schema structure
+    loc_prefs = profile.get("preferences", {}).get("location", {})
+    return {
+        "accept": loc_prefs.get("accept_patterns", ["Remote"]),
+        "reject_non_remote": loc_prefs.get("reject_non_remote", False)
+    }
+
+
+def get_excluded_titles() -> list[str]:
+    """Retrieve case-insensitive forbidden job title substrings from search config."""
+    cfg = load_search_config()
+    return cfg.get("exclude_titles", [])
+
+
 def load_sites_config() -> dict:
     """Load sites.yaml configuration (sites list, manual_ats, blocked, etc.)."""
     import yaml

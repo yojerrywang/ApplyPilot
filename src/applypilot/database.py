@@ -221,7 +221,7 @@ def ensure_columns(conn: sqlite3.Connection | None = None) -> list[str]:
     return added
 
 
-def get_stats(conn: sqlite3.Connection | None = None) -> dict:
+def get_stats(conn: sqlite3.Connection | None = None, session_id: str | None = None) -> dict:
     """Return job counts by pipeline stage.
 
     Provides a snapshot of how many jobs are at each stage, useful for
@@ -229,6 +229,7 @@ def get_stats(conn: sqlite3.Connection | None = None) -> dict:
 
     Args:
         conn: Database connection. Uses get_connection() if None.
+        session_id: Optional session identifier to filter stats by batch.
 
     Returns:
         Dictionary with keys:
@@ -241,88 +242,92 @@ def get_stats(conn: sqlite3.Connection | None = None) -> dict:
 
     stats: dict = {}
 
+    where_clause = " WHERE session_id = ?" if session_id else ""
+    where_and = " session_id = ? AND " if session_id else ""
+    params = (session_id,) if session_id else ()
+
     # Total jobs
-    stats["total"] = conn.execute("SELECT COUNT(*) FROM jobs").fetchone()[0]
+    stats["total"] = conn.execute(f"SELECT COUNT(*) FROM jobs{where_clause}", params).fetchone()[0]
 
     # By site breakdown
     rows = conn.execute(
-        "SELECT site, COUNT(*) as cnt FROM jobs GROUP BY site ORDER BY cnt DESC"
+        f"SELECT site, COUNT(*) as cnt FROM jobs{where_clause} GROUP BY site ORDER BY cnt DESC", params
     ).fetchall()
     stats["by_site"] = [(row[0], row[1]) for row in rows]
 
     # Enrichment stage
     stats["pending_detail"] = conn.execute(
-        "SELECT COUNT(*) FROM jobs WHERE detail_scraped_at IS NULL"
+        f"SELECT COUNT(*) FROM jobs WHERE {where_and}detail_scraped_at IS NULL", params
     ).fetchone()[0]
 
     stats["with_description"] = conn.execute(
-        "SELECT COUNT(*) FROM jobs WHERE full_description IS NOT NULL"
+        f"SELECT COUNT(*) FROM jobs WHERE {where_and}full_description IS NOT NULL", params
     ).fetchone()[0]
 
     stats["detail_errors"] = conn.execute(
-        "SELECT COUNT(*) FROM jobs WHERE detail_error IS NOT NULL"
+        f"SELECT COUNT(*) FROM jobs WHERE {where_and}detail_error IS NOT NULL", params
     ).fetchone()[0]
 
     # Scoring stage
     stats["scored"] = conn.execute(
-        "SELECT COUNT(*) FROM jobs WHERE fit_score IS NOT NULL"
+        f"SELECT COUNT(*) FROM jobs WHERE {where_and}fit_score IS NOT NULL", params
     ).fetchone()[0]
 
     stats["unscored"] = conn.execute(
-        "SELECT COUNT(*) FROM jobs "
-        "WHERE full_description IS NOT NULL AND fit_score IS NULL"
+        f"SELECT COUNT(*) FROM jobs "
+        f"WHERE {where_and}full_description IS NOT NULL AND fit_score IS NULL", params
     ).fetchone()[0]
 
     # Score distribution
     dist_rows = conn.execute(
-        "SELECT fit_score, COUNT(*) as cnt FROM jobs "
-        "WHERE fit_score IS NOT NULL "
-        "GROUP BY fit_score ORDER BY fit_score DESC"
+        f"SELECT fit_score, COUNT(*) as cnt FROM jobs "
+        f"WHERE {where_and}fit_score IS NOT NULL "
+        f"GROUP BY fit_score ORDER BY fit_score DESC", params
     ).fetchall()
     stats["score_distribution"] = [(row[0], row[1]) for row in dist_rows]
 
     # Tailoring stage
     stats["tailored"] = conn.execute(
-        "SELECT COUNT(*) FROM jobs WHERE tailored_resume_path IS NOT NULL"
+        f"SELECT COUNT(*) FROM jobs WHERE {where_and}tailored_resume_path IS NOT NULL", params
     ).fetchone()[0]
 
     stats["untailored_eligible"] = conn.execute(
-        "SELECT COUNT(*) FROM jobs "
-        "WHERE fit_score >= 7 AND full_description IS NOT NULL "
-        "AND tailored_resume_path IS NULL"
+        f"SELECT COUNT(*) FROM jobs "
+        f"WHERE {where_and}fit_score >= 7 AND full_description IS NOT NULL "
+        f"AND tailored_resume_path IS NULL", params
     ).fetchone()[0]
 
     stats["tailor_exhausted"] = conn.execute(
-        "SELECT COUNT(*) FROM jobs "
-        "WHERE COALESCE(tailor_attempts, 0) >= 5 "
-        "AND tailored_resume_path IS NULL"
+        f"SELECT COUNT(*) FROM jobs "
+        f"WHERE {where_and}COALESCE(tailor_attempts, 0) >= 5 "
+        f"AND tailored_resume_path IS NULL", params
     ).fetchone()[0]
 
     # Cover letter stage
     stats["with_cover_letter"] = conn.execute(
-        "SELECT COUNT(*) FROM jobs WHERE cover_letter_path IS NOT NULL"
+        f"SELECT COUNT(*) FROM jobs WHERE {where_and}cover_letter_path IS NOT NULL", params
     ).fetchone()[0]
 
     stats["cover_exhausted"] = conn.execute(
-        "SELECT COUNT(*) FROM jobs "
-        "WHERE COALESCE(cover_attempts, 0) >= 5 "
-        "AND (cover_letter_path IS NULL OR cover_letter_path = '')"
+        f"SELECT COUNT(*) FROM jobs "
+        f"WHERE {where_and}COALESCE(cover_attempts, 0) >= 5 "
+        f"AND (cover_letter_path IS NULL OR cover_letter_path = '')", params
     ).fetchone()[0]
 
     # Application stage
     stats["applied"] = conn.execute(
-        "SELECT COUNT(*) FROM jobs WHERE applied_at IS NOT NULL"
+        f"SELECT COUNT(*) FROM jobs WHERE {where_and}applied_at IS NOT NULL", params
     ).fetchone()[0]
 
     stats["apply_errors"] = conn.execute(
-        "SELECT COUNT(*) FROM jobs WHERE apply_error IS NOT NULL"
+        f"SELECT COUNT(*) FROM jobs WHERE {where_and}apply_error IS NOT NULL", params
     ).fetchone()[0]
 
     stats["ready_to_apply"] = conn.execute(
-        "SELECT COUNT(*) FROM jobs "
-        "WHERE tailored_resume_path IS NOT NULL "
-        "AND applied_at IS NULL "
-        "AND application_url IS NOT NULL"
+        f"SELECT COUNT(*) FROM jobs "
+        f"WHERE {where_and}tailored_resume_path IS NOT NULL "
+        f"AND applied_at IS NULL "
+        f"AND application_url IS NOT NULL", params
     ).fetchone()[0]
 
     return stats
@@ -369,7 +374,8 @@ def store_jobs(conn: sqlite3.Connection, jobs: list[dict],
 def get_jobs_by_stage(conn: sqlite3.Connection | None = None,
                       stage: str = "discovered",
                       min_score: int | None = None,
-                      limit: int = 1000) -> list[dict]:
+                      limit: int = 1000,
+                      session_id: str | None = None) -> list[dict]:
     """Fetch jobs filtered by pipeline stage.
 
     Args:
@@ -377,6 +383,7 @@ def get_jobs_by_stage(conn: sqlite3.Connection | None = None,
         stage: One of "discovered", "enriched", "scored", "tailored", "applied".
         min_score: Minimum fit_score filter (only relevant for scored+ stages).
         limit: Maximum number of rows to return.
+        session_id: Optional session identifier to filter stats by batch.
 
     Returns:
         List of job dicts.
@@ -413,6 +420,10 @@ def get_jobs_by_stage(conn: sqlite3.Connection | None = None,
     if min_score is not None and "fit_score" not in where and stage in ("scored", "tailored", "applied"):
         where += " AND fit_score >= ?"
         params.append(min_score)
+
+    if session_id:
+        where += " AND session_id = ?"
+        params.append(session_id)
 
     query = f"SELECT * FROM jobs WHERE {where} ORDER BY fit_score DESC NULLS LAST, discovered_at DESC"
     if limit > 0:

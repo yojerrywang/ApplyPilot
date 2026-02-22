@@ -12,10 +12,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Session ID tracking (`APPLYPILOT_SESSION_ID`) to group discovered jobs by run batch. Auto-generated via CLI or overrideable via environment variables.
 - OpenRouter local LLM integration for scoring phase with JSON validation and graceful retries.
 - Comprehensive markdown `walkthrough.md` logic detailing pipeline execution strategies and anti-fabrication validator fixes.
+- **Title exclusion enforcement**: Jobs matching `exclude_titles` from `searches.yaml` are actively discarded during discovery before database entry.
 
 ### Changed
 - **LLM Provider Migration**: Switched default recommended inference from local Ollama to OpenRouter API (using `google/gemini-2.0-flash-exp:free` or similar models).
   - *Context:* The initial direct Gemini API implementation experienced instability, prompting a shift to local Ollama models (e.g., `gemma2:2b`, `deepseek-r1:32b`, `llama3.1:8b`). However, local edge models either failed strict JSON validation/anti-fabrication checks during the resume tailoring stage or were far too slow for the massive context size (entire resume + full job description). OpenRouter provides the speed and reliability of robust API models while circumventing direct provider limitations.
+
+### Fixed
+- **Location filter backward compatibility**: Fixed bug where legacy list-based `reject_non_remote` configurations were parsed incorrectly by discovery scrapers.
 
 ### Security
 - Removed collection/storage of job-site account password from `applypilot init` profile flow.

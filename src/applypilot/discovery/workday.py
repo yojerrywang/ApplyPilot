@@ -40,13 +40,13 @@ def load_employers() -> dict:
 
 # -- Location filtering from search config -----------------------------------
 
-def _load_location_filter(search_cfg: dict | None = None):
+def _load_location_filter(search_cfg: dict | None = None) -> tuple[list[str], bool | list[str]]:
     """Load location accept/reject lists from search config."""
     prefs = get_location_preferences()
-    return prefs["accept"], [] if prefs["reject_non_remote"] else []
+    return prefs["accept"], prefs["reject_non_remote"]
 
 
-def _location_ok(location: str | None, accept: list[str], reject: list[str]) -> bool:
+def _location_ok(location: str | None, accept: list[str], reject: bool | list[str]) -> bool:
     """Check if a job location passes the user's location filter."""
     if not location:
         return True
@@ -56,9 +56,13 @@ def _location_ok(location: str | None, accept: list[str], reject: list[str]) -> 
     if any(r in loc for r in ("remote", "anywhere", "work from home", "wfh", "distributed")):
         return True
 
-    for r in reject:
-        if r.lower() in loc:
-            return False
+    if reject is True:
+        return False
+        
+    if isinstance(reject, list) and reject:
+        for r in reject:
+            if r.lower() in loc:
+                return False
 
     for a in accept:
         if a.lower() in loc:

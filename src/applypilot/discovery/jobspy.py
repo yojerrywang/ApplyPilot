@@ -77,13 +77,13 @@ def _scrape_with_retry(kwargs: dict, max_retries: int = 2, backoff: float = 5.0)
 
 # -- Location filtering ------------------------------------------------------
 
-def _load_location_config(search_cfg: dict) -> tuple[list[str], list[str]]:
+def _load_location_config(search_cfg: dict) -> tuple[list[str], bool | list[str]]:
     """Extract accept/reject location lists from unified config."""
     prefs = get_location_preferences()
-    return prefs["accept"], [] if prefs["reject_non_remote"] else []
+    return prefs["accept"], prefs["reject_non_remote"]
 
 
-def _location_ok(location: str | None, accept: list[str], reject: list[str]) -> bool:
+def _location_ok(location: str | None, accept: list[str], reject: bool | list[str]) -> bool:
     """Check if a job location passes the user's location filter.
 
     Remote jobs are always accepted. Non-remote jobs must match an accept
@@ -98,10 +98,15 @@ def _location_ok(location: str | None, accept: list[str], reject: list[str]) -> 
     if any(r in loc for r in ("remote", "anywhere", "work from home", "wfh", "distributed")):
         return True
 
-    # Reject non-remote matches
-    for r in reject:
-        if r.lower() in loc:
-            return False
+    # Boolean enforcement: reject all non-remote
+    if reject is True:
+        return False
+        
+    # List enforcement: reject specific patterns strings
+    if isinstance(reject, list) and reject:
+        for r in reject:
+            if r.lower() in loc:
+                return False
 
     # Accept matches
     for a in accept:

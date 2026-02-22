@@ -99,8 +99,11 @@ def _build_location_check(profile: dict, search_config: dict) -> str:
     are acceptable for hybrid/onsite roles.
     """
     personal = profile["personal"]
+    prefs = config.get_location_preferences()
+    accept_patterns = prefs["accept"]
+    
+    # Still check the old root-level search_config for "primary" city
     location_cfg = search_config.get("location", {})
-    accept_patterns = location_cfg.get("accept_patterns", [])
     primary_city = personal.get("city", location_cfg.get("primary", "your city"))
 
     # Build the list of acceptable cities for hybrid/onsite

@@ -48,22 +48,28 @@ UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
 
 # -- Location filtering -------------------------------------------------------
 
-def _load_location_filter(search_cfg: dict | None = None):
+def _load_location_filter(search_cfg: dict | None = None) -> tuple[list[str], bool | list[str]]:
     """Load location accept/reject lists from search config."""
     prefs = get_location_preferences()
-    return prefs["accept"], [] if prefs["reject_non_remote"] else []
+    return prefs["accept"], prefs["reject_non_remote"]
 
 
-def _location_ok(location: str | None, accept: list[str], reject: list[str]) -> bool:
+def _location_ok(location: str | None, accept: list[str], reject: bool | list[str]) -> bool:
     """Check if a job location passes the user's location filter."""
     if not location:
         return True
     loc = location.lower()
     if any(r in loc for r in ("remote", "anywhere", "work from home", "wfh", "distributed")):
         return True
-    for r in reject:
-        if r.lower() in loc:
-            return False
+        
+    if reject is True:
+        return False
+        
+    if isinstance(reject, list) and reject:
+        for r in reject:
+            if r.lower() in loc:
+                return False
+                
     for a in accept:
         if a.lower() in loc:
             return True
@@ -82,13 +88,13 @@ def load_sites() -> list[dict]:
     return data.get("sites", [])
 
 
-def _store_jobs_filtered(
-    conn: sqlite3.Connection,
-    jobs: list[dict],
-    site: str,
-    strategy: str,
+def _run_one_search(
+    client: httpx.Client,
+    search_term: str,
+    loc_tier: dict,
     accept_locs: list[str],
-    reject_locs: list[str],
+    reject_locs: bool | list[str],
+    conn: sqlite3.Connection,
 ) -> tuple[int, int]:
     """Store jobs with location filtering. Returns (new, existing)."""
     now = datetime.now(timezone.utc).isoformat()
@@ -1021,7 +1027,7 @@ def build_scrape_targets(
 def _run_all(
     targets: list[dict],
     accept_locs: list[str],
-    reject_locs: list[str],
+    reject_locs: bool | list[str],
     workers: int = 1,
 ) -> dict:
     """Run smart extract on all targets.

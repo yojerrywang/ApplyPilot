@@ -8,29 +8,16 @@
 - Parameterized blocked-site and blocked-pattern SQL filtering in apply job acquisition.
 - Tightened local file permissions for sensitive artifacts on non-Windows systems.
 
-## P0 — Filters Consistency + Enforcement
+## Completed (P0 & P1)
 
-### 1) Unify location filter schema across pipeline
-- Problem: Discovery uses `location_accept` / `location_reject_non_remote`, while apply prompt uses `location.accept_patterns`.
-- Goal: Support one canonical schema and maintain backward compatibility.
-- Scope:
-  - Add centralized config helpers in `config.py` to read normalized location filters.
-  - Update discovery (`jobspy.py`, `workday.py`, `smartextract.py`) and apply prompt generation to use the shared helper.
-  - Add migration note in docs and examples.
-- Acceptance criteria:
-  - Both old and new config styles work.
-  - Discovery and apply behavior are consistent for the same config.
+### ✅ Unify location filter schema across pipeline (P0)
+- Support one canonical schema (`get_location_preferences()`) and maintain backward compatibility for `location_reject_non_remote` as either list or bool.
 
-### 2) Enforce `exclude_titles` during discovery
-- Problem: `exclude_titles` exists in `searches.example.yaml` but is not currently enforced.
-- Goal: Filter out excluded titles before scoring/tailoring.
-- Scope:
-  - Apply case-insensitive title filtering in discovery ingestion paths.
-  - Log filtered counts by source/stage.
-  - Add tests for exclusion matching and edge cases.
-- Acceptance criteria:
-  - Jobs matching excluded title patterns are not inserted or are excluded before downstream stages.
-  - `status`/logs expose filtered counts.
+### ✅ Enforce `exclude_titles` during discovery (P0)
+- Apply case-insensitive title filtering in discovery ingestion paths to actively discard unwanted jobs before database insertion.
+
+### ✅ Expose Session ID filtering in CLI (P1)
+- Allow users to specifically target jobs discovered in a specific run via `applypilot run/apply/status --session-id`.
 
 ## P1 — Pipeline Efficiency and Cost Controls
 
@@ -43,15 +30,6 @@
 - Acceptance criteria:
   - No LLM stages execute on jobs excluded by dedupe/filters.
   - Stage-order tests pass in sequential + streaming modes.
-
-### 4) Expose Session ID filtering in CLI
-- Goal: Allow users to specifically target jobs discovered in a specific run (e.g. `applypilot run --session-id 20260221_222415`).
-- Scope:
-  - Add `--session-id` flat to `cli.py` commands (`run`, `apply`, `status`).
-  - Update `database.py` query conditions to filter by `session_id` if provided.
-- Acceptance criteria:
-  - CLI can process and target single historical discovery runs.
-  - Pipeline stages flow seamlessly for that specific session batch.
 
 ## P2 — Observability and UX
 

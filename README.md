@@ -179,6 +179,9 @@ applypilot apply --dry-run              # Fill forms without submitting
 applypilot apply --continuous           # Run forever, polling for new jobs
 applypilot apply --headless             # Headless browser mode
 applypilot apply --url URL              # Apply to a specific job
+applypilot run --session-id "xyz"       # Target a specific discovery batch
+applypilot apply --session-id "xyz"     # Auto-apply to a specific batch
+applypilot status --session-id "xyz"    # Stats for a specific batch
 applypilot status                       # Pipeline statistics
 applypilot dashboard                    # Open HTML results dashboard
 ```

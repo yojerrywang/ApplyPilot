@@ -18,7 +18,7 @@ from pathlib import Path
 from rich.console import Console
 
 from applypilot.config import APP_DIR, DB_PATH
-from applypilot.database import get_connection
+from applypilot.database import get_connection, get_transparency_counters
 
 console = Console()
 
@@ -48,6 +48,10 @@ def generate_dashboard(output_path: str | None = None) -> str:
     high_fit = conn.execute(
         "SELECT COUNT(*) FROM jobs WHERE fit_score >= 7"
     ).fetchone()[0]
+    counters = get_transparency_counters(conn=conn)
+    filtered_location = counters["filtered_by_location"]
+    filtered_title = counters["filtered_by_title"]
+    deduped = counters["deduped"]
 
     # Score distribution
     score_dist: dict[int, int] = {}
@@ -217,6 +221,9 @@ def generate_dashboard(output_path: str | None = None) -> str:
   .stat-scored .stat-num {{ color: #60a5fa; }}
   .stat-high .stat-num {{ color: #f59e0b; }}
   .stat-total .stat-num {{ color: #e2e8f0; }}
+  .stat-filter-loc .stat-num {{ color: #f97316; }}
+  .stat-filter-title .stat-num {{ color: #14b8a6; }}
+  .stat-deduped .stat-num {{ color: #a78bfa; }}
 
   /* Filters */
   .filters {{ background: #1e293b; border-radius: 12px; padding: 1.25rem; margin-bottom: 2rem; display: flex; gap: 1rem; flex-wrap: wrap; align-items: center; }}
@@ -302,13 +309,16 @@ def generate_dashboard(output_path: str | None = None) -> str:
 <body>
 
 <h1>ApplyPilot Dashboard</h1>
-<p class="subtitle">{total} jobs &middot; {scored} scored &middot; {high_fit} strong matches (7+)</p>
+<p class="subtitle">{total} jobs &middot; {scored} scored &middot; {high_fit} strong matches (7+) &middot; {deduped} deduped</p>
 
 <div class="summary">
   <div class="stat-card stat-total"><div class="stat-num">{total}</div><div class="stat-label">Total Jobs</div></div>
   <div class="stat-card stat-ok"><div class="stat-num">{ready}</div><div class="stat-label">Ready (desc + URL)</div></div>
   <div class="stat-card stat-scored"><div class="stat-num">{scored}</div><div class="stat-label">Scored by LLM</div></div>
   <div class="stat-card stat-high"><div class="stat-num">{high_fit}</div><div class="stat-label">Strong Fit (7+)</div></div>
+  <div class="stat-card stat-filter-loc"><div class="stat-num">{filtered_location}</div><div class="stat-label">Filtered by Location</div></div>
+  <div class="stat-card stat-filter-title"><div class="stat-num">{filtered_title}</div><div class="stat-label">Filtered by Title</div></div>
+  <div class="stat-card stat-deduped"><div class="stat-num">{deduped}</div><div class="stat-label">Deduped</div></div>
 </div>
 
 <div class="filters">

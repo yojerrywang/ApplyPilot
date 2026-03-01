@@ -21,7 +21,7 @@ https://github.com/user-attachments/assets/7ee3417f-43d4-4245-9952-35df1e77f2df
 
 ApplyPilot is a 6-stage autonomous job application pipeline. It discovers jobs across 5+ boards, scores them against your resume with AI, tailors your resume per job, writes cover letters, and **submits applications for you**. It navigates forms, uploads documents, answers screening questions, all hands-free.
 
-Three commands. That's it.
+Four commands. That's it.
 
 ```bash
 pip install applypilot
@@ -33,6 +33,7 @@ applypilot run -w 4      # same but parallel (4 threads for discovery/enrichment
 applypilot apply         # autonomous browser-driven submission
 applypilot apply -w 3    # parallel apply (3 Chrome instances)
 applypilot apply --dry-run  # fill forms without submitting
+applypilot doctor        # preflight checks (env/profile/search/db/runtime)
 ```
 
 ---
@@ -152,6 +153,8 @@ Writes a targeted cover letter per job referencing the specific company, role, a
 ### Auto-Apply
 Claude Code launches a Chrome instance, navigates to each application page, detects the form type, fills personal information and work history, uploads the tailored resume and cover letter, answers screening questions with AI, and submits. A live dashboard shows progress in real-time.
 
+If a worker crashes mid-run, stale `in_progress` locks are now auto-recovered and returned to the retry queue after a timeout (`stale_lock_minutes` in defaults).
+
 The Playwright MCP server is configured automatically at runtime per worker. No manual MCP setup needed.
 
 ```bash
@@ -160,6 +163,7 @@ applypilot apply --mark-applied URL    # manually mark a job as applied
 applypilot apply --mark-failed URL     # manually mark a job as failed
 applypilot apply --reset-failed        # reset all failed jobs for retry
 applypilot apply --gen --url URL       # generate prompt file for manual debugging
+applypilot doctor                      # validate config/runtime readiness
 ```
 
 ```
@@ -202,10 +206,12 @@ applypilot run --session-id "xyz"       # Target a specific discovery batch
 applypilot apply --session-id "xyz"     # Auto-apply to a specific batch
 applypilot status --session-id "xyz"    # Stats for a specific batch
 applypilot status                       # Pipeline statistics
+applypilot doctor                       # Validate profile/search/env/db/runtime
 applypilot dashboard                    # Open HTML results dashboard
 ```
 
 When `--session-id` is provided to `applypilot run`, downstream stages (`enrich`, `score`, `tailor`, `cover`) and run summary stats are scoped to that batch.
+`applypilot status` and `applypilot dashboard` now include transparency counters for filtered-by-location, filtered-by-title, and deduped jobs.
 
 ---
 
@@ -223,6 +229,7 @@ When `--session-id` is provided to `applypilot run`, downstream stages (`enrich`
 ## Contributing
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for development setup, coding standards, and PR guidelines.
+Branch protection baseline and required-check guidance live in [.github/BRANCH_PROTECTION.md](.github/BRANCH_PROTECTION.md).
 
 ---
 

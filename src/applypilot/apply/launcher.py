@@ -17,7 +17,7 @@ import sys
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from rich.console import Console
@@ -87,6 +87,49 @@ def _make_mcp_config(cdp_port: int) -> dict:
 # Database operations
 # ---------------------------------------------------------------------------
 
+def recover_stale_locks(
+    conn=None,
+    stale_minutes: int | None = None,
+    session_id: str | None = None,
+) -> int:
+    """Recover stale in-progress apply locks left by crashed workers.
+
+    Rows stuck in `in_progress` are moved to `failed` so they can be retried.
+    """
+    if conn is None:
+        conn = get_connection()
+
+    ttl_minutes = stale_minutes or int(config.DEFAULTS.get("stale_lock_minutes", 45))
+    cutoff = (datetime.now(timezone.utc) - timedelta(minutes=ttl_minutes)).isoformat()
+
+    clauses = [
+        "apply_status = 'in_progress'",
+        "(last_attempted_at IS NULL OR last_attempted_at < ?)",
+    ]
+    params: list = [cutoff]
+    if session_id:
+        clauses.append("session_id = ?")
+        params.append(session_id)
+
+    where_sql = " AND ".join(clauses)
+    cursor = conn.execute(
+        f"""
+        UPDATE jobs
+        SET apply_status = 'failed',
+            apply_error = CASE
+                WHEN apply_error IS NULL OR apply_error = '' THEN 'stale lock recovered'
+                ELSE apply_error
+            END,
+            apply_attempts = COALESCE(apply_attempts, 0) + 1,
+            agent_id = NULL
+        WHERE {where_sql}
+        """,
+        params,
+    )
+    conn.commit()
+    return cursor.rowcount
+
+
 def acquire_job(target_url: str | None = None, min_score: int = 7,
                 worker_id: int = 0, session_id: str | None = None) -> dict | None:
     """Atomically acquire the next job to apply to.
@@ -100,6 +143,9 @@ def acquire_job(target_url: str | None = None, min_score: int = 7,
         Job dict or None if the queue is empty.
     """
     conn = get_connection()
+    recovered = recover_stale_locks(conn=conn, session_id=session_id)
+    if recovered:
+        logger.warning("Recovered %d stale in-progress lock(s)", recovered)
     try:
         conn.execute("BEGIN IMMEDIATE")
 

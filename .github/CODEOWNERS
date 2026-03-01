@@ -1,0 +1,7 @@
+# Default ownership; adjust for your fork/team.
+* @Pickle-Pixel
+
+# Critical paths
+.github/workflows/* @Pickle-Pixel
+src/applypilot/apply/* @Pickle-Pixel
+src/applypilot/pipeline.py @Pickle-Pixel

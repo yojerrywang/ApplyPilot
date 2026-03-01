@@ -9,12 +9,13 @@ import asyncio
 import json
 import logging
 from datetime import datetime, timezone
+import os
 import urllib.parse
 
 from playwright.async_api import async_playwright
 
-from applypilot.config import load_search_config
-from applypilot.database import get_connection, store_jobs
+from applypilot.config import get_excluded_titles, load_search_config
+from applypilot.database import get_connection, increment_counter, store_jobs
 
 log = logging.getLogger(__name__)
 
@@ -97,12 +98,6 @@ def _map_job(raw_job: dict) -> dict | None:
         if not title or not company or not url:
             return None
             
-        excluded = get_excluded_titles()
-        title_lower = title.lower()
-        if any(ext in title_lower for ext in excluded):
-            log.debug("Skipping %s (excluded title)", title)
-            return None
-            
         desc = raw_job.get("description", "")
         if not desc and "descriptionHtml" in raw_job:
             desc = raw_job["descriptionHtml"]
@@ -165,6 +160,9 @@ async def _crawl_async(queries: list[dict], remote_only: bool, hours_old: int) -
     """Run all searches asynchronously via Playwright."""
     stats = {"new": 0, "existing": 0}
     conn = get_connection()
+    excluded_titles = get_excluded_titles()
+    filtered_title = 0
+    session_id = os.environ.get("APPLYPILOT_SESSION_ID")
     
     async with async_playwright() as p:
         # Launch with specific arguments that make headless chrome look more legit
@@ -208,6 +206,10 @@ async def _crawl_async(queries: list[dict], remote_only: bool, hours_old: int) -
             
             mapped_jobs = []
             for raw in raw_jobs:
+                title = (raw.get("title") or raw.get("jobTitle") or "").lower()
+                if title and any(ext.lower() in title for ext in excluded_titles):
+                    filtered_title += 1
+                    continue
                 job = _map_job(raw)
                 if job:
                     mapped_jobs.append(job)
@@ -222,6 +224,9 @@ async def _crawl_async(queries: list[dict], remote_only: bool, hours_old: int) -
             await page.wait_for_timeout(2000)
             
         await browser.close()
+
+    if filtered_title:
+        increment_counter("filtered_by_title", filtered_title, session_id=session_id)
         
     return stats
 

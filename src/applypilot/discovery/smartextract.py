@@ -14,6 +14,7 @@ placeholders replaced from the user's search configuration.
 
 import json
 import logging
+import os
 import re
 import sqlite3
 import sys
@@ -29,8 +30,8 @@ from bs4 import BeautifulSoup
 from playwright.sync_api import sync_playwright
 
 from applypilot import config
-from applypilot.config import CONFIG_DIR
-from applypilot.database import get_connection, init_db, store_jobs, get_stats
+from applypilot.config import CONFIG_DIR, get_excluded_titles, get_location_preferences
+from applypilot.database import get_connection, get_stats, increment_counter, init_db
 from applypilot.llm import get_client
 
 log = logging.getLogger(__name__)
@@ -88,19 +89,22 @@ def load_sites() -> list[dict]:
     return data.get("sites", [])
 
 
-def _run_one_search(
-    client: httpx.Client,
-    search_term: str,
-    loc_tier: dict,
+def _store_jobs_filtered(
+    conn: sqlite3.Connection,
+    jobs: list[dict],
+    site: str,
+    strategy: str,
     accept_locs: list[str],
     reject_locs: bool | list[str],
-    conn: sqlite3.Connection,
 ) -> tuple[int, int]:
     """Store jobs with location filtering. Returns (new, existing)."""
     now = datetime.now(timezone.utc).isoformat()
     new = 0
     existing = 0
-    filtered = 0
+    filtered_location = 0
+    filtered_title = 0
+    excluded_titles = get_excluded_titles()
+    session_id = os.environ.get("APPLYPILOT_SESSION_ID")
 
     for job in jobs:
         url = job.get("url")
@@ -109,28 +113,32 @@ def _run_one_search(
             
         title = job.get("title")
         if title:
-            excluded = get_excluded_titles()
             title_lower = title.lower()
-            if any(ext in title_lower for ext in excluded):
+            if any(ext.lower() in title_lower for ext in excluded_titles):
                 log.debug("Skipping [%s] %s (excluded title)", site, title)
+                filtered_title += 1
                 continue
                 
         if not _location_ok(job.get("location"), accept_locs, reject_locs):
-            filtered += 1
+            filtered_location += 1
             continue
         try:
             conn.execute(
-                "INSERT INTO jobs (url, title, company, salary, description, location, site, strategy, discovered_at) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                "INSERT INTO jobs (url, title, company, salary, description, location, site, strategy, session_id, discovered_at) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (url, job.get("title"), job.get("company"), job.get("salary"), job.get("description"),
-                 job.get("location"), site, strategy, now),
+                 job.get("location"), site, strategy, session_id, now),
             )
             new += 1
         except sqlite3.IntegrityError:
             existing += 1
 
-    if filtered:
-        log.info("Filtered %d jobs (wrong location)", filtered)
+    if filtered_title:
+        log.info("Filtered %d jobs (excluded title)", filtered_title)
+        increment_counter("filtered_by_title", filtered_title, session_id=session_id)
+    if filtered_location:
+        log.info("Filtered %d jobs (wrong location)", filtered_location)
+        increment_counter("filtered_by_location", filtered_location, session_id=session_id)
     conn.commit()
     return new, existing
 

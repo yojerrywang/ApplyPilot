@@ -17,6 +17,11 @@ from applypilot.config import DB_PATH
 _local = threading.local()
 
 
+# Filter / dedupe transparency counters persisted across runs.
+COUNTER_KEYS: tuple[str, ...] = ("filtered_by_location", "filtered_by_title", "deduped")
+_COUNTER_SCOPE_ALL = "__all__"
+
+
 def get_connection(db_path: Path | str | None = None) -> sqlite3.Connection:
     """Get a thread-local cached SQLite connection with WAL mode enabled.
 
@@ -74,6 +79,7 @@ def init_db(db_path: Path | str | None = None) -> sqlite3.Connection:
       - Apply:      applied_at, apply_status, apply_error, apply_attempts,
                    agent_id, last_attempted_at, apply_duration_ms, apply_task_id,
                    verification_confidence
+      - Metrics:    transparency_counters table for filtered/deduped counts
 
     Args:
         db_path: Override the default DB_PATH.
@@ -132,6 +138,16 @@ def init_db(db_path: Path | str | None = None) -> sqlite3.Connection:
             apply_duration_ms     INTEGER,
             apply_task_id         TEXT,
             verification_confidence TEXT
+        )
+    """)
+
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS transparency_counters (
+            scope        TEXT NOT NULL,
+            counter_name TEXT NOT NULL,
+            value        INTEGER NOT NULL DEFAULT 0,
+            updated_at   TEXT NOT NULL,
+            PRIMARY KEY (scope, counter_name)
         )
     """)
     conn.commit()
@@ -221,6 +237,79 @@ def ensure_columns(conn: sqlite3.Connection | None = None) -> list[str]:
         conn.commit()
 
     return added
+
+
+def increment_counter(
+    counter_name: str,
+    amount: int = 1,
+    session_id: str | None = None,
+    conn: sqlite3.Connection | None = None,
+) -> None:
+    """Increment a transparency counter for the given scope.
+
+    Args:
+        counter_name: Counter key (recommended: values from COUNTER_KEYS).
+        amount: Positive increment amount.
+        session_id: Optional session scope. Uses global scope if omitted.
+        conn: Optional DB connection.
+    """
+    if amount <= 0:
+        return
+
+    if conn is None:
+        conn = get_connection()
+
+    now = datetime.now(timezone.utc).isoformat()
+    scope = session_id or _COUNTER_SCOPE_ALL
+
+    conn.execute(
+        """
+        INSERT INTO transparency_counters (scope, counter_name, value, updated_at)
+        VALUES (?, ?, ?, ?)
+        ON CONFLICT(scope, counter_name) DO UPDATE
+            SET value = value + excluded.value,
+                updated_at = excluded.updated_at
+        """,
+        (scope, counter_name, amount, now),
+    )
+    conn.commit()
+
+
+def get_transparency_counters(
+    conn: sqlite3.Connection | None = None,
+    session_id: str | None = None,
+) -> dict[str, int]:
+    """Fetch transparency counters globally or for a single session."""
+    if conn is None:
+        conn = get_connection()
+
+    counters = {name: 0 for name in COUNTER_KEYS}
+
+    if session_id:
+        rows = conn.execute(
+            """
+            SELECT counter_name, value
+            FROM transparency_counters
+            WHERE scope = ?
+            """,
+            (session_id,),
+        ).fetchall()
+    else:
+        rows = conn.execute(
+            """
+            SELECT counter_name, SUM(value) AS total
+            FROM transparency_counters
+            GROUP BY counter_name
+            """
+        ).fetchall()
+
+    for row in rows:
+        name = row[0]
+        value = int(row[1] or 0)
+        if name in counters:
+            counters[name] = value
+
+    return counters
 
 
 def get_stats(conn: sqlite3.Connection | None = None, session_id: str | None = None) -> dict:
@@ -332,6 +421,11 @@ def get_stats(conn: sqlite3.Connection | None = None, session_id: str | None = N
         f"AND application_url IS NOT NULL", params
     ).fetchone()[0]
 
+    counters = get_transparency_counters(conn=conn, session_id=session_id)
+    stats["filtered_by_location"] = counters["filtered_by_location"]
+    stats["filtered_by_title"] = counters["filtered_by_title"]
+    stats["deduped"] = counters["deduped"]
+
     return stats
 
 
@@ -441,7 +535,10 @@ def get_jobs_by_stage(conn: sqlite3.Connection | None = None,
     return []
 
 
-def remove_semantic_duplicates(conn: sqlite3.Connection | None = None) -> int:
+def remove_semantic_duplicates(
+    conn: sqlite3.Connection | None = None,
+    session_id: str | None = None,
+) -> int:
     """Remove semantic duplicates (same title and company) from the database.
 
     Keeps the one with the highest fit_score or most recent discovery date.
@@ -455,7 +552,10 @@ def remove_semantic_duplicates(conn: sqlite3.Connection | None = None) -> int:
     if conn is None:
         conn = get_connection()
 
-    query = """
+    session_filter = "AND session_id = ?" if session_id else ""
+    params = (session_id,) if session_id else ()
+
+    query = f"""
     WITH RankedJobs AS (
         SELECT url,
                ROW_NUMBER() OVER (
@@ -470,11 +570,12 @@ def remove_semantic_duplicates(conn: sqlite3.Connection | None = None) -> int:
         WHERE title IS NOT NULL
           AND TRIM(title) != ''
           AND COALESCE(NULLIF(company, ''), NULLIF(site, '')) IS NOT NULL
+          {session_filter}
     )
     SELECT url FROM RankedJobs WHERE rn > 1;
     """
     
-    rows = conn.execute(query).fetchall()
+    rows = conn.execute(query, params).fetchall()
     urls_to_delete = [row[0] for row in rows]
     
     if not urls_to_delete:
@@ -485,5 +586,9 @@ def remove_semantic_duplicates(conn: sqlite3.Connection | None = None) -> int:
     
     cursor = conn.execute(delete_query, urls_to_delete)
     conn.commit()
-    
-    return cursor.rowcount
+
+    removed = cursor.rowcount
+    if removed > 0:
+        increment_counter("deduped", amount=removed, session_id=session_id, conn=conn)
+
+    return removed

@@ -130,44 +130,44 @@ def _run_discover(workers: int = 1, session_id: str | None = None) -> dict:
     return stats
 
 
-def _run_enrich(workers: int = 1) -> dict:
+def _run_enrich(workers: int = 1, session_id: str | None = None) -> dict:
     """Stage: Detail enrichment — scrape full descriptions and apply URLs."""
     try:
         from applypilot.enrichment.detail import run_enrichment
-        run_enrichment(workers=workers)
+        run_enrichment(workers=workers, session_id=session_id)
         return {"status": "ok"}
     except Exception as e:
         log.error("Enrichment failed: %s", e)
         return {"status": f"error: {e}"}
 
 
-def _run_score() -> dict:
+def _run_score(session_id: str | None = None) -> dict:
     """Stage: LLM scoring — assign fit scores 1-10."""
     try:
         from applypilot.scoring.scorer import run_scoring
-        run_scoring()
+        run_scoring(session_id=session_id)
         return {"status": "ok"}
     except Exception as e:
         log.error("Scoring failed: %s", e)
         return {"status": f"error: {e}"}
 
 
-def _run_tailor(min_score: int = 7) -> dict:
+def _run_tailor(min_score: int = 7, session_id: str | None = None) -> dict:
     """Stage: Resume tailoring — generate tailored resumes for high-fit jobs."""
     try:
         from applypilot.scoring.tailor import run_tailoring
-        run_tailoring(min_score=min_score)
+        run_tailoring(min_score=min_score, session_id=session_id)
         return {"status": "ok"}
     except Exception as e:
         log.error("Tailoring failed: %s", e)
         return {"status": f"error: {e}"}
 
 
-def _run_cover(min_score: int = 7) -> dict:
+def _run_cover(min_score: int = 7, session_id: str | None = None) -> dict:
     """Stage: Cover letter generation."""
     try:
         from applypilot.scoring.cover_letter import run_cover_letters
-        run_cover_letters(min_score=min_score)
+        run_cover_letters(min_score=min_score, session_id=session_id)
         return {"status": "ok"}
     except Exception as e:
         log.error("Cover letter generation failed: %s", e)
@@ -276,14 +276,20 @@ _PENDING_SQL: dict[str, str] = {
 _STREAM_POLL_INTERVAL = 10
 
 
-def _count_pending(stage: str, min_score: int = 7) -> int:
+def _count_pending(stage: str, min_score: int = 7, session_id: str | None = None) -> int:
     """Count pending work items for a stage."""
     sql = _PENDING_SQL.get(stage)
     if sql is None:
         return 0
-    conn = get_connection()
+    params: list = []
     if "?" in sql:
-        return conn.execute(sql, (min_score,)).fetchone()[0]
+        params.append(min_score)
+    if session_id:
+        sql = f"{sql} AND session_id = ?"
+        params.append(session_id)
+    conn = get_connection()
+    if params:
+        return conn.execute(sql, tuple(params)).fetchone()[0]
     return conn.execute(sql).fetchone()[0]
 
 
@@ -307,7 +313,7 @@ def _run_stage_streaming(
         kwargs["min_score"] = min_score
     if stage in ("discover", "enrich"):
         kwargs["workers"] = workers
-    if stage == "discover":
+    if stage in ("discover", "enrich", "score", "tailor", "cover"):
         kwargs["session_id"] = session_id
 
     upstream = _UPSTREAM[stage]
@@ -330,7 +336,7 @@ def _run_stage_streaming(
             # Wait a bit for upstream to produce some work before first run
             tracker.wait(upstream, timeout=_STREAM_POLL_INTERVAL)
 
-        pending = _count_pending(stage, min_score)
+        pending = _count_pending(stage, min_score, session_id=session_id)
 
         if pending > 0:
             try:
@@ -378,7 +384,7 @@ def _run_sequential(ordered: list[str], min_score: int, workers: int = 1, sessio
                 kwargs["min_score"] = min_score
             if name in ("discover", "enrich"):
                 kwargs["workers"] = workers
-            if name == "discover":
+            if name in ("discover", "enrich", "score", "tailor", "cover"):
                 kwargs["session_id"] = session_id
             result = runner(**kwargs)
             elapsed = time.time() - t0
@@ -517,7 +523,7 @@ def run_pipeline(
     console.print(f"  Stages:    {' -> '.join(ordered)}")
 
     # Pre-run stats
-    pre_stats = get_stats()
+    pre_stats = get_stats(session_id=session_id)
     console.print(f"  DB:        {pre_stats['total']} jobs, {pre_stats['pending_detail']} pending enrichment")
 
     if dry_run:
@@ -557,7 +563,7 @@ def run_pipeline(
     console.print(summary)
 
     # Final DB stats
-    final = get_stats()
+    final = get_stats(session_id=session_id)
     console.print(f"\n  [bold]DB Final State:[/bold]")
     console.print(f"    Total jobs:     {final['total']}")
     console.print(f"    With desc:      {final['with_description']}")

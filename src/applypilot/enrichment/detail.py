@@ -693,6 +693,7 @@ def _run_detail_scraper(
     sites: list[str] | None = None,
     max_per_site: int | None = None,
     workers: int = 1,
+    session_id: str | None = None,
 ) -> dict:
     """Groups pending jobs by site and processes each batch.
 
@@ -702,10 +703,16 @@ def _run_detail_scraper(
 
     Returns aggregate stats dict.
     """
-    skip_filter = " AND ".join(f"site != '{s}'" for s in SKIP_DETAIL_SITES)
-    where = f"WHERE detail_scraped_at IS NULL AND {skip_filter}"
+    where_clauses = ["detail_scraped_at IS NULL"]
+    where_clauses.extend(f"site != '{s}'" for s in SKIP_DETAIL_SITES)
+    params: list = []
+    if session_id:
+        where_clauses.append("session_id = ?")
+        params.append(session_id)
+    where = "WHERE " + " AND ".join(where_clauses)
     rows = conn.execute(
-        f"SELECT url, title, site FROM jobs {where} ORDER BY site"
+        f"SELECT url, title, site FROM jobs {where} ORDER BY site",
+        tuple(params),
     ).fetchall()
 
     if not rows:
@@ -855,7 +862,7 @@ def stream_detail(
 
 # -- Public entry point ------------------------------------------------------
 
-def run_enrichment(limit: int = 100, workers: int = 1) -> dict:
+def run_enrichment(limit: int = 100, workers: int = 1, session_id: str | None = None) -> dict:
     """Main entry point for detail page enrichment.
 
     Fetches pending jobs from the database (those without full_description),
@@ -877,18 +884,25 @@ def run_enrichment(limit: int = 100, workers: int = 1) -> dict:
              url_stats["resolved"], url_stats["already_absolute"], url_stats["failed"])
 
     # WTTJ special handling
-    wttj_count = conn.execute(
-        "SELECT COUNT(*) FROM jobs WHERE site = 'WelcomeToTheJungle'"
-    ).fetchone()[0]
+    wttj_query = "SELECT COUNT(*) FROM jobs WHERE site = 'WelcomeToTheJungle'"
+    wttj_params: list = []
+    if session_id:
+        wttj_query += " AND session_id = ?"
+        wttj_params.append(session_id)
+    wttj_count = conn.execute(wttj_query, tuple(wttj_params)).fetchone()[0]
     if wttj_count > 0:
-        sample = conn.execute(
-            "SELECT url FROM jobs WHERE site = 'WelcomeToTheJungle' LIMIT 1"
-        ).fetchone()
+        sample_query = "SELECT url FROM jobs WHERE site = 'WelcomeToTheJungle'"
+        sample_params: list = []
+        if session_id:
+            sample_query += " AND session_id = ?"
+            sample_params.append(session_id)
+        sample_query += " LIMIT 1"
+        sample = conn.execute(sample_query, tuple(sample_params)).fetchone()
         if sample and not sample[0].startswith("http"):
             updated = resolve_wttj_urls(conn)
             log.info("WTTJ: %d URLs updated", updated)
 
     # Run the detail scraper
-    stats = _run_detail_scraper(conn, max_per_site=limit, workers=workers)
+    stats = _run_detail_scraper(conn, max_per_site=limit, workers=workers, session_id=session_id)
 
     return stats

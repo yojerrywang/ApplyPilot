@@ -4,6 +4,7 @@ import types
 import sys
 
 from applypilot import pipeline
+from applypilot import database
 
 
 def test_resolve_stages_preserves_canonical_order():
@@ -34,7 +35,7 @@ def test_run_pipeline_forwards_session_id(monkeypatch, stream):
     monkeypatch.setattr(
         pipeline,
         "get_stats",
-        lambda: {
+        lambda session_id=None: {
             "total": 0,
             "pending_detail": 0,
             "with_description": 0,
@@ -113,3 +114,64 @@ def test_run_discover_accepts_session_id_and_calls_smartextract_without_session_
 
     assert result["smartextract"] == "ok"
     assert calls["smart_workers"] == 2
+
+
+def test_run_sequential_forwards_session_id_to_scoped_stages(monkeypatch):
+    calls = {}
+
+    def fake_enrich(workers=1, session_id=None):
+        calls["enrich"] = {"workers": workers, "session_id": session_id}
+        return {"status": "ok"}
+
+    def fake_score(session_id=None):
+        calls["score"] = {"session_id": session_id}
+        return {"status": "ok"}
+
+    def fake_tailor(min_score=7, session_id=None):
+        calls["tailor"] = {"min_score": min_score, "session_id": session_id}
+        return {"status": "ok"}
+
+    def fake_cover(min_score=7, session_id=None):
+        calls["cover"] = {"min_score": min_score, "session_id": session_id}
+        return {"status": "ok"}
+
+    monkeypatch.setitem(pipeline._STAGE_RUNNERS, "enrich", fake_enrich)
+    monkeypatch.setitem(pipeline._STAGE_RUNNERS, "score", fake_score)
+    monkeypatch.setitem(pipeline._STAGE_RUNNERS, "tailor", fake_tailor)
+    monkeypatch.setitem(pipeline._STAGE_RUNNERS, "cover", fake_cover)
+
+    result = pipeline._run_sequential(
+        ["enrich", "score", "tailor", "cover"],
+        min_score=9,
+        workers=3,
+        session_id="batch-xyz",
+    )
+
+    assert result["errors"] == {}
+    assert calls["enrich"] == {"workers": 3, "session_id": "batch-xyz"}
+    assert calls["score"] == {"session_id": "batch-xyz"}
+    assert calls["tailor"] == {"min_score": 9, "session_id": "batch-xyz"}
+    assert calls["cover"] == {"min_score": 9, "session_id": "batch-xyz"}
+
+
+def test_count_pending_respects_session_id(monkeypatch, tmp_path):
+    db_path = tmp_path / "pending.db"
+    conn = database.init_db(db_path)
+
+    conn.execute(
+        "INSERT INTO jobs (url, title, site, session_id, discovered_at, full_description) VALUES (?, ?, ?, ?, datetime('now'), ?)",
+        ("https://a.example/job", "Role A", "Site", "batch-a", "desc"),
+    )
+    conn.execute(
+        "INSERT INTO jobs (url, title, site, session_id, discovered_at, full_description) VALUES (?, ?, ?, ?, datetime('now'), ?)",
+        ("https://b.example/job", "Role B", "Site", "batch-b", "desc"),
+    )
+    conn.commit()
+
+    monkeypatch.setattr(pipeline, "get_connection", lambda: database.get_connection(db_path))
+
+    assert pipeline._count_pending("score", session_id="batch-a") == 1
+    assert pipeline._count_pending("score", session_id="batch-b") == 1
+    assert pipeline._count_pending("score", session_id="missing-batch") == 0
+
+    database.close_connection(db_path)

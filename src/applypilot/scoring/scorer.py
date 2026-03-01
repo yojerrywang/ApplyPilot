@@ -102,7 +102,7 @@ def score_job(resume_text: str, job: dict) -> dict:
         return {"score": 0, "keywords": "", "reasoning": f"LLM error: {e}"}
 
 
-def run_scoring(limit: int = 0, rescore: bool = False) -> dict:
+def run_scoring(limit: int = 0, rescore: bool = False, session_id: str | None = None) -> dict:
     """Score unscored jobs that have full descriptions.
 
     Args:
@@ -117,11 +117,16 @@ def run_scoring(limit: int = 0, rescore: bool = False) -> dict:
 
     if rescore:
         query = "SELECT * FROM jobs WHERE full_description IS NOT NULL"
+        params: list = []
+        if session_id:
+            query += " AND session_id = ?"
+            params.append(session_id)
         if limit > 0:
-            query += f" LIMIT {limit}"
-        jobs = conn.execute(query).fetchall()
+            query += " LIMIT ?"
+            params.append(limit)
+        jobs = conn.execute(query, tuple(params)).fetchall()
     else:
-        jobs = get_jobs_by_stage(conn=conn, stage="pending_score", limit=limit)
+        jobs = get_jobs_by_stage(conn=conn, stage="pending_score", limit=limit, session_id=session_id)
 
     if not jobs:
         log.info("No unscored jobs with descriptions found.")
@@ -172,11 +177,16 @@ def run_scoring(limit: int = 0, rescore: bool = False) -> dict:
     log.info("Done: %d scored in %.1fs (%.1f jobs/sec)", len(results), elapsed, len(results) / elapsed if elapsed > 0 else 0)
 
     # Score distribution
-    dist = conn.execute("""
-        SELECT fit_score, COUNT(*) FROM jobs
-        WHERE fit_score IS NOT NULL
-        GROUP BY fit_score ORDER BY fit_score DESC
-    """).fetchall()
+    dist_query = (
+        "SELECT fit_score, COUNT(*) FROM jobs "
+        "WHERE fit_score IS NOT NULL"
+    )
+    dist_params: list = []
+    if session_id:
+        dist_query += " AND session_id = ?"
+        dist_params.append(session_id)
+    dist_query += " GROUP BY fit_score ORDER BY fit_score DESC"
+    dist = conn.execute(dist_query, tuple(dist_params)).fetchall()
     distribution = [(row[0], row[1]) for row in dist]
 
     return {

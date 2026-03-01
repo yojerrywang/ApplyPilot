@@ -169,7 +169,7 @@ def generate_cover_letter(
 
 # ── Batch Entry Point ────────────────────────────────────────────────────
 
-def run_cover_letters(min_score: int = 7, limit: int = 1000) -> dict:
+def run_cover_letters(min_score: int = 7, limit: int = 1000, session_id: str | None = None) -> dict:
     """Generate cover letters for high-scoring jobs that have tailored resumes.
 
     Args:
@@ -184,15 +184,20 @@ def run_cover_letters(min_score: int = 7, limit: int = 1000) -> dict:
     conn = get_connection()
 
     # Fetch jobs that have tailored resumes but no cover letter yet
-    jobs = conn.execute(
+    query = (
         "SELECT * FROM jobs "
         "WHERE fit_score >= ? AND tailored_resume_path IS NOT NULL "
         "AND full_description IS NOT NULL "
         "AND (cover_letter_path IS NULL OR cover_letter_path = '') "
         "AND COALESCE(cover_attempts, 0) < ? "
-        "ORDER BY fit_score DESC LIMIT ?",
-        (min_score, MAX_ATTEMPTS, limit),
-    ).fetchall()
+    )
+    params: list = [min_score, MAX_ATTEMPTS]
+    if session_id:
+        query += "AND session_id = ? "
+        params.append(session_id)
+    query += "ORDER BY fit_score DESC LIMIT ?"
+    params.append(limit)
+    jobs = conn.execute(query, tuple(params)).fetchall()
 
     if not jobs:
         log.info("No jobs needing cover letters (score >= %d).", min_score)

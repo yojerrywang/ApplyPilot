@@ -30,6 +30,26 @@
 - Persist `company` in the jobs schema and discovery ingestors.
 - Deduplicate by normalized `company + title` (fallback to `site` when company is missing), prioritized by highest fit score and recency.
 
+## Completed (operational-hardening-suite)
+
+### ✅ Add filter transparency in status/dashboard (P2 #5)
+- Added persisted counters for `filtered_by_location`, `filtered_by_title`, and `deduped`.
+- Surfaced counters in `applypilot status` and HTML dashboard.
+
+### ✅ Add `applypilot doctor` for config validation (P2 #6)
+- Added doctor command covering profile/search/env schema validation, blocked-pattern sanity checks, and runtime readiness probes.
+- Fails fast on hard errors and prints actionable remediation guidance.
+
+### ✅ Recover stale apply locks
+- Added stale `in_progress` recovery in the apply launcher with configurable timeout (`stale_lock_minutes`).
+- Added tests validating stale-lock recovery and automatic reacquisition flow.
+
+### ✅ Expand E2E regression coverage
+- Added end-to-end tests for `run --stream`, `apply --url` targeting, and failed→retry→applied lifecycle.
+
+### ✅ CI branch gating artifact
+- Added `required-checks` CI gate job and branch-protection baseline docs for `dev` + `main`.
+
 ## P1 — Pipeline Efficiency and Cost Controls
 
 ### 3) Keep broad discovery, then cheap filters before expensive LLM stages
@@ -43,22 +63,6 @@
   - Stage-order tests pass in sequential + streaming modes.
 
 ## P2 — Observability and UX
-
-### 5) Add filter transparency in status/dashboard
-- Goal: Make filtering decisions visible.
-- Scope:
-  - Add counters for `filtered_by_location`, `filtered_by_title`, and `deduped`.
-  - Surface counters in `status` and dashboard.
-- Acceptance criteria:
-  - Users can explain why discovered jobs did or did not progress.
-
-### 6) Add `applypilot doctor` for config validation
-- Goal: Validate env/config before long runs.
-- Scope:
-  - Check required keys, conflicting schema usage, and malformed patterns.
-  - Print actionable fixes.
-- Acceptance criteria:
-  - Invalid setup is detected up-front with clear remediation.
 
 ### 11) Role-track based tailoring (multi-role consistency)
 - Goal: Support separate resume-tailoring tracks per target role (e.g., Product Manager, Content Manager, Communications Specialist) to reduce large rewrites and hallucinations.

@@ -9,6 +9,7 @@ hardcoded. Supports sequential search + detail fetching with proxy.
 
 import json
 import logging
+import os
 import re
 import sqlite3
 import time
@@ -21,7 +22,7 @@ import yaml
 
 from applypilot import config
 from applypilot.config import CONFIG_DIR, get_excluded_titles, get_location_preferences
-from applypilot.database import get_connection, init_db, store_jobs
+from applypilot.database import get_connection, increment_counter, init_db
 
 log = logging.getLogger(__name__)
 
@@ -194,11 +195,14 @@ def search_employer(
     max_results: int = 0,
     accept_locs: list[str] | None = None,
     reject_locs: list[str] | None = None,
-) -> list[dict]:
+) -> tuple[list[dict], dict[str, int]]:
     """Search an employer, paginate through all results, optionally filter by location."""
     log.info("%s: searching \"%s\"...", employer["name"], search_text)
 
     all_jobs: list[dict] = []
+    filtered_title = 0
+    filtered_location = 0
+    excluded_titles = get_excluded_titles()
     offset = 0
     page_size = 20
     max_pages = 25  # Cap at 500 results
@@ -220,13 +224,19 @@ def search_employer(
             break
 
         for j in postings:
+            title = j.get("title", "")
+            if title and any(ext.lower() in title.lower() for ext in excluded_titles):
+                filtered_title += 1
+                continue
+
             loc = j.get("locationsText", "")
             if location_filter and accept_locs is not None and reject_locs is not None:
                 if not _location_ok(loc, accept_locs, reject_locs):
+                    filtered_location += 1
                     continue
 
             all_jobs.append({
-                "title": j.get("title", ""),
+                "title": title,
                 "location": loc,
                 "posted": j.get("postedOn", ""),
                 "external_path": j.get("externalPath", ""),
@@ -247,7 +257,15 @@ def search_employer(
 
     log.info("%s: %d jobs found%s", employer["name"], len(all_jobs),
              " (filtered)" if location_filter else "")
-    return all_jobs
+    if filtered_title:
+        log.info("%s: filtered %d jobs by excluded title", employer["name"], filtered_title)
+    if filtered_location:
+        log.info("%s: filtered %d jobs by location", employer["name"], filtered_location)
+
+    return all_jobs, {
+        "filtered_by_title": filtered_title,
+        "filtered_by_location": filtered_location,
+    }
 
 
 # -- Fetch details -----------------------------------------------------------
@@ -303,6 +321,7 @@ def fetch_details(employer: dict, jobs: list[dict]) -> list[dict]:
 def store_results(conn: sqlite3.Connection, jobs: list[dict], employers: dict) -> tuple[int, int]:
     """Store corporate jobs in DB. Returns (new, existing)."""
     now = datetime.now(timezone.utc).isoformat()
+    session_id = os.environ.get("APPLYPILOT_SESSION_ID")
     new = 0
     existing = 0
 
@@ -327,10 +346,10 @@ def store_results(conn: sqlite3.Connection, jobs: list[dict], employers: dict) -
         try:
             conn.execute(
                 "INSERT INTO jobs (url, title, company, salary, description, location, site, strategy, "
-                "discovered_at, full_description, application_url, detail_scraped_at, detail_error) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                "session_id, discovered_at, full_description, application_url, detail_scraped_at, detail_error) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (url, job.get("title"), job.get("employer_name"), None, short_desc, job.get("location"),
-                 site, strategy, now, full_description, url, detail_scraped_at, detail_error),
+                 site, strategy, session_id, now, full_description, url, detail_scraped_at, detail_error),
             )
             new += 1
         except sqlite3.IntegrityError:
@@ -352,7 +371,7 @@ def _process_one(
     emp = employers[employer_key]
 
     try:
-        jobs = search_employer(
+        jobs, filtered = search_employer(
             employer_key, emp, search_text,
             location_filter=location_filter,
             accept_locs=accept_locs,
@@ -366,6 +385,20 @@ def _process_one(
     if not jobs:
         return {"employer": emp["name"], "query": search_text,
                 "found": 0, "new": 0, "existing": 0}
+
+    session_id = os.environ.get("APPLYPILOT_SESSION_ID")
+    if filtered["filtered_by_title"]:
+        increment_counter(
+            "filtered_by_title",
+            filtered["filtered_by_title"],
+            session_id=session_id,
+        )
+    if filtered["filtered_by_location"]:
+        increment_counter(
+            "filtered_by_location",
+            filtered["filtered_by_location"],
+            session_id=session_id,
+        )
 
     try:
         jobs = fetch_details(emp, jobs)

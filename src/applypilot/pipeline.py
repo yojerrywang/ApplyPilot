@@ -62,12 +62,12 @@ _UPSTREAM: dict[str, str | None] = {
 # Individual stage runners
 # ---------------------------------------------------------------------------
 
-def _run_dedupe(workers: int = 1) -> dict:
+def _run_dedupe(workers: int = 1, session_id: str | None = None) -> dict:
     """Stage: Remove semantic duplicates."""
     console.print("  [cyan]Removing semantic duplicates...[/cyan]")
     try:
         from applypilot.database import remove_semantic_duplicates
-        removed = remove_semantic_duplicates()
+        removed = remove_semantic_duplicates(session_id=session_id)
         log.info("Removed %d duplicates.", removed)
         return {"removed": removed}
     except Exception as e:
@@ -313,7 +313,7 @@ def _run_stage_streaming(
         kwargs["min_score"] = min_score
     if stage in ("discover", "enrich"):
         kwargs["workers"] = workers
-    if stage in ("discover", "enrich", "score", "tailor", "cover"):
+    if stage in ("discover", "dedupe", "enrich", "score", "tailor", "cover"):
         kwargs["session_id"] = session_id
 
     upstream = _UPSTREAM[stage]
@@ -384,7 +384,7 @@ def _run_sequential(ordered: list[str], min_score: int, workers: int = 1, sessio
                 kwargs["min_score"] = min_score
             if name in ("discover", "enrich"):
                 kwargs["workers"] = workers
-            if name in ("discover", "enrich", "score", "tailor", "cover"):
+            if name in ("discover", "dedupe", "enrich", "score", "tailor", "cover"):
                 kwargs["session_id"] = session_id
             result = runner(**kwargs)
             elapsed = time.time() - t0

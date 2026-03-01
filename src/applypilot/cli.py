@@ -81,6 +81,47 @@ def init() -> None:
 
 
 @app.command()
+def doctor() -> None:
+    """Validate environment/config/database readiness before long runs."""
+    from applypilot.doctor import run_checks
+
+    checks = run_checks()
+    failures = sum(1 for c in checks if c.level == "fail")
+    warnings = sum(1 for c in checks if c.level == "warn")
+
+    table = Table(title="ApplyPilot Doctor", show_header=True, header_style="bold cyan")
+    table.add_column("Status", style="bold", no_wrap=True)
+    table.add_column("Check", style="bold")
+    table.add_column("Details")
+
+    for result in checks:
+        status_style = {
+            "ok": "[green]OK[/green]",
+            "warn": "[yellow]WARN[/yellow]",
+            "fail": "[red]FAIL[/red]",
+        }.get(result.level, result.level.upper())
+
+        details = result.message
+        if result.fix:
+            details = f"{details}\n[dim]Fix: {result.fix}[/dim]"
+
+        table.add_row(status_style, result.check, details)
+
+    console.print()
+    console.print(table)
+    console.print(
+        f"\n[bold]{len(checks)} checks[/bold] "
+        f"([green]{len(checks) - warnings - failures} OK[/green], "
+        f"[yellow]{warnings} warnings[/yellow], "
+        f"[red]{failures} failures[/red])"
+    )
+    console.print()
+
+    if failures:
+        raise typer.Exit(code=1)
+
+
+@app.command()
 def run(
     stages: Optional[list[str]] = typer.Argument(
         None,
@@ -277,6 +318,9 @@ def status(
     summary.add_row("Ready to apply", str(stats["ready_to_apply"]))
     summary.add_row("Applied", str(stats["applied"]))
     summary.add_row("Apply errors", str(stats["apply_errors"]))
+    summary.add_row("Filtered by location", str(stats["filtered_by_location"]))
+    summary.add_row("Filtered by title", str(stats["filtered_by_title"]))
+    summary.add_row("Deduped", str(stats["deduped"]))
 
     console.print(summary)
 

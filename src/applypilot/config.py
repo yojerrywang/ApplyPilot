@@ -201,6 +201,7 @@ DEFAULTS = {
     "min_score": 7,
     "max_apply_attempts": 3,
     "max_tailor_attempts": 5,
+    "stale_lock_minutes": 45,
     "poll_interval": 60,
     "apply_timeout": 300,
     "viewport": "1280x900",

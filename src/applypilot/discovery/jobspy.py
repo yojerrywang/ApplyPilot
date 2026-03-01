@@ -8,6 +8,7 @@ search configuration YAML (searches.yaml) rather than being hardcoded.
 """
 
 import logging
+import os
 import sqlite3
 import time
 from datetime import datetime, timezone
@@ -16,7 +17,7 @@ from jobspy import scrape_jobs
 
 from applypilot import config
 from applypilot.config import get_excluded_titles, get_location_preferences
-from applypilot.database import get_connection, init_db, store_jobs
+from applypilot.database import get_connection, increment_counter, init_db, store_jobs
 
 log = logging.getLogger(__name__)
 
@@ -124,6 +125,9 @@ def store_jobspy_results(conn: sqlite3.Connection, df, source_label: str) -> tup
     now = datetime.now(timezone.utc).isoformat()
     new = 0
     existing = 0
+    filtered_title = 0
+    excluded = get_excluded_titles()
+    session_id = os.environ.get("APPLYPILOT_SESSION_ID")
 
     for _, row in df.iterrows():
         url = str(row.get("job_url", ""))
@@ -136,9 +140,9 @@ def store_jobspy_results(conn: sqlite3.Connection, df, source_label: str) -> tup
 
         # Exclude blacklisted titles
         if title:
-            excluded = get_excluded_titles()
             title_lower = title.lower()
-            if any(ext in title_lower for ext in excluded):
+            if any(ext.lower() in title_lower for ext in excluded):
+                filtered_title += 1
                 continue
 
         # Build salary string from min/max
@@ -177,10 +181,10 @@ def store_jobspy_results(conn: sqlite3.Connection, df, source_label: str) -> tup
 
         try:
             conn.execute(
-                "INSERT INTO jobs (url, title, company, salary, description, location, site, strategy, discovered_at, "
+                "INSERT INTO jobs (url, title, company, salary, description, location, site, strategy, session_id, discovered_at, "
                 "full_description, application_url, detail_scraped_at) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                (url, title, company, salary, description, location_str, site_label, strategy, now,
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (url, title, company, salary, description, location_str, site_label, strategy, session_id, now,
                  full_description, apply_url, detail_scraped_at),
             )
             new += 1
@@ -188,6 +192,10 @@ def store_jobspy_results(conn: sqlite3.Connection, df, source_label: str) -> tup
             existing += 1
 
     conn.commit()
+
+    if filtered_title:
+        increment_counter("filtered_by_title", filtered_title, session_id=session_id)
+
     return new, existing
 
 
@@ -284,6 +292,12 @@ def _run_one_search(
         accept_locs, reject_locs,
     ), axis=1)]
     filtered = before - len(df)
+    if filtered:
+        increment_counter(
+            "filtered_by_location",
+            filtered,
+            session_id=os.environ.get("APPLYPILOT_SESSION_ID"),
+        )
 
     conn = get_connection()
     new, existing = store_jobspy_results(conn, df, s["query"])

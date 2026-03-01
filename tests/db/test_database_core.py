@@ -66,3 +66,47 @@ def test_remove_semantic_duplicates_uses_company_and_title(tmp_path):
     assert removed == 1
     assert remaining_urls == {"https://b", "https://c"}
     database.close_connection(db_path)
+
+
+def test_transparency_counters_support_global_and_session_scope(tmp_path):
+    db_path = tmp_path / "counters.db"
+    conn = database.init_db(db_path)
+
+    database.increment_counter("filtered_by_location", amount=2, session_id="batch-a", conn=conn)
+    database.increment_counter("filtered_by_location", amount=1, session_id="batch-b", conn=conn)
+    database.increment_counter("filtered_by_title", amount=3, session_id="batch-a", conn=conn)
+
+    global_counters = database.get_transparency_counters(conn=conn)
+    batch_a_counters = database.get_transparency_counters(conn=conn, session_id="batch-a")
+    batch_b_counters = database.get_transparency_counters(conn=conn, session_id="batch-b")
+
+    assert global_counters["filtered_by_location"] == 3
+    assert global_counters["filtered_by_title"] == 3
+    assert batch_a_counters["filtered_by_location"] == 2
+    assert batch_a_counters["filtered_by_title"] == 3
+    assert batch_b_counters["filtered_by_location"] == 1
+    assert batch_b_counters["filtered_by_title"] == 0
+
+    database.close_connection(db_path)
+
+
+def test_remove_semantic_duplicates_increments_deduped_counter(tmp_path):
+    db_path = tmp_path / "dedupe-counter.db"
+    conn = database.init_db(db_path)
+
+    conn.execute(
+        "INSERT INTO jobs (url, title, company, site, discovered_at, fit_score, session_id) VALUES (?, ?, ?, ?, ?, ?, ?)",
+        ("https://a", "Backend Engineer", "Acme", "Indeed", "2026-01-01T00:00:00Z", 7, "batch-a"),
+    )
+    conn.execute(
+        "INSERT INTO jobs (url, title, company, site, discovered_at, fit_score, session_id) VALUES (?, ?, ?, ?, ?, ?, ?)",
+        ("https://b", "Backend Engineer", "Acme", "LinkedIn", "2026-01-02T00:00:00Z", 9, "batch-a"),
+    )
+    conn.commit()
+
+    removed = database.remove_semantic_duplicates(conn, session_id="batch-a")
+    counters = database.get_transparency_counters(conn=conn, session_id="batch-a")
+
+    assert removed == 1
+    assert counters["deduped"] == 1
+    database.close_connection(db_path)

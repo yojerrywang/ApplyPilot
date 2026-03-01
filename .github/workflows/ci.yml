@@ -1,7 +1,11 @@
 name: CI
 
 on:
-  workflow_dispatch:  # manual trigger only
+  pull_request:
+    branches: ["main", "dev"]
+  push:
+    branches: ["main", "dev"]
+  workflow_dispatch:
 
 jobs:
   test:
@@ -25,5 +29,8 @@ jobs:
       - name: Lint
         run: ruff check src/
 
-      - name: Test
+      - name: Unit and Integration Tests
         run: pytest tests/ -v
+
+      - name: End-to-End Regression Tests
+        run: pytest tests/e2e -v

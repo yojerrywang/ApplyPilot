@@ -66,7 +66,7 @@ def init_db(db_path: Path | str | None = None) -> sqlite3.Connection:
     so it won't destroy existing data.
 
     Schema columns by stage:
-      - Discovery:  url, title, salary, description, location, site, strategy, discovered_at
+      - Discovery:  url, title, company, salary, description, location, site, strategy, discovered_at
       - Enrichment: full_description, application_url, detail_scraped_at, detail_error
       - Scoring:    fit_score, score_reasoning, scored_at
       - Tailoring:  tailored_resume_path, tailored_at, tailor_attempts
@@ -92,6 +92,7 @@ def init_db(db_path: Path | str | None = None) -> sqlite3.Connection:
             -- Discovery stage (smart_extract / job_search)
             url                   TEXT PRIMARY KEY,
             title                 TEXT,
+            company               TEXT,
             salary                TEXT,
             description           TEXT,
             location              TEXT,
@@ -148,6 +149,7 @@ _ALL_COLUMNS: dict[str, str] = {
     # Discovery
     "url": "TEXT PRIMARY KEY",
     "title": "TEXT",
+    "company": "TEXT",
     "salary": "TEXT",
     "description": "TEXT",
     "location": "TEXT",
@@ -358,9 +360,9 @@ def store_jobs(conn: sqlite3.Connection, jobs: list[dict],
             continue
         try:
             conn.execute(
-                "INSERT INTO jobs (url, title, salary, description, location, site, strategy, session_id, discovered_at) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                (url, job.get("title"), job.get("salary"), job.get("description"),
+                "INSERT INTO jobs (url, title, company, salary, description, location, site, strategy, session_id, discovered_at) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (url, job.get("title"), job.get("company"), job.get("salary"), job.get("description"),
                  job.get("location"), site, strategy, session_id, now),
             )
             new += 1
@@ -457,12 +459,17 @@ def remove_semantic_duplicates(conn: sqlite3.Connection | None = None) -> int:
     WITH RankedJobs AS (
         SELECT url,
                ROW_NUMBER() OVER (
-                   PARTITION BY LOWER(TRIM(site)), LOWER(TRIM(title)) 
+                   PARTITION BY
+                       LOWER(TRIM(COALESCE(NULLIF(company, ''), NULLIF(site, '')))),
+                       LOWER(TRIM(title))
                    ORDER BY 
                        COALESCE(fit_score, 0) DESC, 
                        discovered_at DESC
                ) as rn
         FROM jobs
+        WHERE title IS NOT NULL
+          AND TRIM(title) != ''
+          AND COALESCE(NULLIF(company, ''), NULLIF(site, '')) IS NOT NULL
     )
     SELECT url FROM RankedJobs WHERE rn > 1;
     """

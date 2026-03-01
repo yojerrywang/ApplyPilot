@@ -1,6 +1,6 @@
 [project]
 name = "applypilot"
-version = "0.2.0"
+version = "0.3.0"
 description = "AI-powered end-to-end job application pipeline"
 readme = "README.md"
 license = "AGPL-3.0-only"
@@ -26,6 +26,7 @@ dependencies = [
     "python-dotenv>=1.0",
     "pyyaml>=6.0",
     "pandas>=2.0",
+    "pypdf>=4.0",
     ]
 
 [project.optional-dependencies]

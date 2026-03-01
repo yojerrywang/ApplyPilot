@@ -76,3 +76,31 @@ def test_acquire_job_returns_none_when_session_has_no_eligible_jobs(monkeypatch,
 
     assert job is None
     database.close_connection(db_path)
+
+
+def test_acquire_job_target_url_allows_null_apply_status(monkeypatch, tmp_path):
+    db_path = tmp_path / "apply-target.db"
+    conn = database.init_db(db_path)
+    target = "https://target.example/job/123"
+    _insert_job(
+        conn,
+        url=target,
+        application_url=f"{target}?source=board",
+        apply_status=None,
+    )
+    conn.commit()
+
+    monkeypatch.setattr(launcher, "get_connection", lambda: database.get_connection(db_path))
+    monkeypatch.setattr(launcher, "_load_blocked", lambda: (set(), []))
+    monkeypatch.setattr("applypilot.config.is_manual_ats", lambda _: False)
+
+    job = launcher.acquire_job(target_url=target, min_score=7, worker_id=9)
+
+    assert job is not None
+    assert job["url"] == target
+
+    row = conn.execute("SELECT apply_status, agent_id FROM jobs WHERE url = ?", (target,)).fetchone()
+    assert row[0] == "in_progress"
+    assert row[1] == "worker-9"
+
+    database.close_connection(db_path)

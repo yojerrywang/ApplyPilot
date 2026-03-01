@@ -19,6 +19,17 @@
 ### ✅ Expose Session ID filtering in CLI (P1)
 - Allow users to specifically target jobs discovered in a specific run via `applypilot run/apply/status --session-id`.
 
+### ✅ Scope Session ID across downstream pipeline stages (P1)
+- Ensure `applypilot run --session-id` scopes `enrich`, `score`, `tailor`, and `cover` stage execution in sequential and streaming modes.
+- Ensure pending-work polling and run summary stats respect the same session scope.
+
+### ✅ Fix targeted apply URL acquisition for fresh jobs (P0)
+- Ensure `applypilot apply --url URL` can acquire jobs with `apply_status = NULL` (fresh, never-attempted rows).
+
+### ✅ Correct semantic dedupe identity to company + title (P1)
+- Persist `company` in the jobs schema and discovery ingestors.
+- Deduplicate by normalized `company + title` (fallback to `site` when company is missing), prioritized by highest fit score and recency.
+
 ## P1 — Pipeline Efficiency and Cost Controls
 
 ### 3) Keep broad discovery, then cheap filters before expensive LLM stages

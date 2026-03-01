@@ -56,7 +56,7 @@ Runs stages 1-5: discovers jobs, scores them, tailors your resume, generates cov
 | Stage | What Happens |
 |-------|-------------|
 | **1. Discover** | Scrapes 5 job boards (Indeed, LinkedIn, Glassdoor, ZipRecruiter, Google Jobs) + 48 Workday employer portals + 30 direct career sites. Automatically assigns a `session_id` to group batches. |
-| **2. Dedupe** | Removes semantic duplicates (same title and company) prioritizing the highest fit score and most recent discovery. |
+| **2. Dedupe** | Removes semantic duplicates by normalized company + title (fallback to site + title when company is unavailable), prioritizing the highest fit score and most recent discovery. |
 | **3. Enrich** | Fetches full job descriptions via JSON-LD, CSS selectors, or AI-powered extraction |
 | **4. Score** | AI rates every job 1-10 based on your resume and preferences. Only high-fit jobs proceed |
 | **5. Tailor** | AI rewrites your resume per job: reorganizes, emphasizes relevant experience, adds keywords. Never fabricates |
@@ -135,7 +135,7 @@ API keys and runtime config: `GEMINI_API_KEY`, `LLM_MODEL`, `CAPSOLVER_API_KEY` 
 Queries Indeed, LinkedIn, Glassdoor, ZipRecruiter, Google Jobs via JobSpy. Scrapes 48 Workday employer portals (configurable in `employers.yaml`). Hits 30 direct career sites with custom extractors. Automatically tags the batch with a `session_id`.
 
 ### Dedupe
-Scans the database and automatically purges semantic duplicates (jobs that have different URLs but the exact same title and company name), keeping the ones with the highest fit score.
+Scans the database and automatically purges semantic duplicates (jobs that have different URLs but the same normalized company + title; falls back to site + title when company is unavailable), keeping the one with the highest fit score and most recent discovery.
 
 ### Enrich
 Visits each job URL and extracts the full description. 3-tier cascade: JSON-LD structured data, then CSS selector patterns, then AI-powered extraction for unknown layouts.
@@ -204,6 +204,8 @@ applypilot status --session-id "xyz"    # Stats for a specific batch
 applypilot status                       # Pipeline statistics
 applypilot dashboard                    # Open HTML results dashboard
 ```
+
+When `--session-id` is provided to `applypilot run`, downstream stages (`enrich`, `score`, `tailor`, `cover`) and run summary stats are scoped to that batch.
 
 ---
 

@@ -18,9 +18,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 - **LLM Provider Migration**: Switched default recommended inference from local Ollama to OpenRouter API (using `google/gemini-2.0-flash-exp:free` or similar models).
   - *Context:* The initial direct Gemini API implementation experienced instability, prompting a shift to local Ollama models (e.g., `gemma2:2b`, `deepseek-r1:32b`, `llama3.1:8b`). However, local edge models either failed strict JSON validation/anti-fabrication checks during the resume tailoring stage or were far too slow for the massive context size (entire resume + full job description). OpenRouter provides the speed and reliability of robust API models while circumventing direct provider limitations.
+- **Session-scoped pipeline execution**: `applypilot run --session-id` now scopes downstream stages (`enrich`, `score`, `tailor`, `cover`) and pending-work polling to that batch in both sequential and streaming modes.
+- **Dedupe identity correction**: Semantic dedupe now keys by normalized `company + title` (with fallback to `site` when company is unavailable) and the `jobs` schema now persists `company`.
 
 ### Fixed
 - **Location filter backward compatibility**: Fixed bug where legacy list-based `reject_non_remote` configurations were parsed incorrectly by discovery scrapers.
+- **Discover stage session wiring**: Fixed `discover` stage invocation path to accept and propagate `session_id` correctly.
+- **Target URL apply selection**: Fixed `applypilot apply --url` lookup to include jobs where `apply_status` is `NULL` (not only non-`in_progress` non-null statuses).
 
 ### Security
 - Removed collection/storage of job-site account password from `applypilot init` profile flow.

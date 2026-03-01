@@ -13,6 +13,7 @@ Usage (via CLI):
 from __future__ import annotations
 
 import logging
+import os
 import threading
 import time
 from datetime import datetime
@@ -75,8 +76,11 @@ def _run_dedupe(workers: int = 1) -> dict:
         return {"error": str(e)}
 
 
-def _run_discover(workers: int = 1) -> dict:
+def _run_discover(workers: int = 1, session_id: str | None = None) -> dict:
     """Stage: Job discovery — JobSpy, Workday, SmartExtract, and HiringCafe scrapers."""
+    if session_id:
+        os.environ["APPLYPILOT_SESSION_ID"] = session_id
+
     stats: dict = {"jobspy": None, "workday": None, "smartextract": None, "hiringcafe": None}
 
     # JobSpy
@@ -116,7 +120,7 @@ def _run_discover(workers: int = 1) -> dict:
     console.print("  [cyan]Smart extract (AI-powered scraping)...[/cyan]")
     try:
         from applypilot.discovery.smartextract import run_smart_extract
-        run_smart_extract(workers=workers, session_id=session_id)
+        run_smart_extract(workers=workers)
         stats["smartextract"] = "ok"
     except Exception as e:
         log.error("Smart extract failed: %s", e)
@@ -303,6 +307,8 @@ def _run_stage_streaming(
         kwargs["min_score"] = min_score
     if stage in ("discover", "enrich"):
         kwargs["workers"] = workers
+    if stage == "discover":
+        kwargs["session_id"] = session_id
 
     upstream = _UPSTREAM[stage]
 
@@ -491,6 +497,8 @@ def run_pipeline(
     load_env()
     ensure_dirs()
     init_db()
+    if session_id:
+        os.environ["APPLYPILOT_SESSION_ID"] = session_id
 
     # Resolve stages
     if stages is None:
@@ -522,9 +530,9 @@ def run_pipeline(
 
     # Execute
     if stream:
-        result = _run_streaming(ordered, min_score, workers=workers)
+        result = _run_streaming(ordered, min_score, workers=workers, session_id=session_id)
     else:
-        result = _run_sequential(ordered, min_score, workers=workers)
+        result = _run_sequential(ordered, min_score, workers=workers, session_id=session_id)
 
     # Summary table
     console.print(f"\n{'=' * 70}")

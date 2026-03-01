@@ -226,25 +226,32 @@ def acquire_job(target_url: str | None = None, min_score: int = 7,
 
 def mark_result(url: str, status: str, error: str | None = None,
                 permanent: bool = False, duration_ms: int | None = None,
-                task_id: str | None = None) -> None:
+                task_id: str | None = None,
+                verification_confidence: float | None = None) -> None:
     """Update a job's apply status in the database."""
     conn = get_connection()
     now = datetime.now(timezone.utc).isoformat()
+    confidence_value = None
+    if verification_confidence is not None:
+        confidence_value = f"{max(0.0, min(1.0, float(verification_confidence))):.2f}"
+
     if status == "applied":
         conn.execute("""
             UPDATE jobs SET apply_status = 'applied', applied_at = ?,
                            apply_error = NULL, agent_id = NULL,
-                           apply_duration_ms = ?, apply_task_id = ?
+                           apply_duration_ms = ?, apply_task_id = ?,
+                           verification_confidence = ?
             WHERE url = ?
-        """, (now, duration_ms, task_id, url))
+        """, (now, duration_ms, task_id, confidence_value, url))
     else:
         attempts = 99 if permanent else "COALESCE(apply_attempts, 0) + 1"
         conn.execute(f"""
             UPDATE jobs SET apply_status = ?, apply_error = ?,
                            apply_attempts = {attempts}, agent_id = NULL,
-                           apply_duration_ms = ?, apply_task_id = ?
+                           apply_duration_ms = ?, apply_task_id = ?,
+                           verification_confidence = ?
             WHERE url = ?
-        """, (status, error or "unknown", duration_ms, task_id, url))
+        """, (status, error or "unknown", duration_ms, task_id, confidence_value, url))
     conn.commit()
 
 
@@ -279,6 +286,9 @@ def gen_prompt(target_url: str, min_score: int = 7,
     resume_text = ""
     if txt_path and txt_path.exists():
         resume_text = txt_path.read_text(encoding="utf-8")
+    elif config.RESUME_PATH.exists():
+        # Fallback keeps apply moving if a tailored .txt artifact is missing.
+        resume_text = config.RESUME_PATH.read_text(encoding="utf-8")
 
     prompt = prompt_mod.build_prompt(job=job, tailored_resume=resume_text)
 
@@ -312,13 +322,15 @@ def mark_job(url: str, status: str, reason: str | None = None) -> None:
     if status == "applied":
         conn.execute("""
             UPDATE jobs SET apply_status = 'applied', applied_at = ?,
-                           apply_error = NULL, agent_id = NULL
+                           apply_error = NULL, agent_id = NULL,
+                           apply_task_id = NULL, verification_confidence = NULL
             WHERE url = ?
         """, (now, url))
     else:
         conn.execute("""
             UPDATE jobs SET apply_status = 'failed', apply_error = ?,
-                           apply_attempts = 99, agent_id = NULL
+                           apply_attempts = 99, agent_id = NULL,
+                           apply_task_id = NULL, verification_confidence = NULL
             WHERE url = ?
         """, (reason or "manual", url))
     conn.commit()
@@ -346,12 +358,77 @@ def reset_failed() -> int:
 # Per-job execution
 # ---------------------------------------------------------------------------
 
+_CONFIRMATION_PATTERNS: tuple[str, ...] = (
+    "thank you for applying",
+    "application submitted",
+    "application received",
+    "we have received your application",
+    "your application has been submitted",
+)
+
+
+def _extract_result_meta(output: str) -> dict:
+    """Parse optional result metadata emitted by the agent."""
+    meta = {
+        "task_id": None,
+        "verification_confidence": None,
+        "confirmation_url": None,
+    }
+
+    for raw_line in output.splitlines():
+        line = raw_line.strip()
+        if not line:
+            continue
+
+        if line.startswith("RESULT_META:"):
+            payload = line.split("RESULT_META:", 1)[1].strip()
+            try:
+                parsed = json.loads(payload)
+                if isinstance(parsed, dict):
+                    if parsed.get("task_id"):
+                        meta["task_id"] = str(parsed["task_id"])
+                    if parsed.get("confirmation_url"):
+                        meta["confirmation_url"] = str(parsed["confirmation_url"])
+                    if parsed.get("verification_confidence") is not None:
+                        try:
+                            conf = float(parsed["verification_confidence"])
+                            meta["verification_confidence"] = max(0.0, min(1.0, conf))
+                        except (TypeError, ValueError):
+                            pass
+            except json.JSONDecodeError:
+                pass
+
+        if "RESULT:APPLIED" in line:
+            for key, value in re.findall(r"([a-zA-Z_]+)\s*=\s*([^:\s]+)", line):
+                k = key.lower()
+                v = value.strip()
+                if k == "task_id" and not meta["task_id"]:
+                    meta["task_id"] = v
+                elif k in ("confidence", "verification_confidence"):
+                    try:
+                        conf = float(v)
+                        meta["verification_confidence"] = max(0.0, min(1.0, conf))
+                    except ValueError:
+                        pass
+                elif k in ("confirmation_url", "url") and v.startswith("http"):
+                    meta["confirmation_url"] = v
+
+    return meta
+
+
+def _looks_like_successful_submission(output: str) -> bool:
+    """Conservative heuristic when the agent forgets the RESULT line."""
+    output_lower = output.lower()
+    matches = sum(1 for pattern in _CONFIRMATION_PATTERNS if pattern in output_lower)
+    return matches >= 2
+
+
 def run_job(job: dict, port: int, worker_id: int = 0,
-            model: str = "sonnet", dry_run: bool = False) -> tuple[str, int]:
+            model: str = "sonnet", dry_run: bool = False) -> tuple[str, int, dict]:
     """Spawn a Claude Code session for one job application.
 
     Returns:
-        Tuple of (status_string, duration_ms). Status is one of:
+        Tuple of (status_string, duration_ms, metadata). Status is one of:
         'applied', 'expired', 'captcha', 'login_issue',
         'failed:reason', or 'skipped'.
     """
@@ -498,7 +575,7 @@ def run_job(job: dict, port: int, worker_id: int = 0,
         proc = None
 
         if returncode and returncode < 0:
-            return "skipped", int((time.time() - start) * 1000)
+            return "skipped", int((time.time() - start) * 1000), {}
 
         output = "\n".join(text_parts)
         elapsed = int(time.time() - start)
@@ -514,6 +591,8 @@ def run_job(job: dict, port: int, worker_id: int = 0,
             prev_cost = ws.total_cost if ws else 0.0
             update_state(worker_id, total_cost=prev_cost + cost)
 
+        meta = _extract_result_meta(output)
+
         def _clean_reason(s: str) -> str:
             return re.sub(r'[*`"]+$', '', s).strip()
 
@@ -522,7 +601,7 @@ def run_job(job: dict, port: int, worker_id: int = 0,
                 add_event(f"[W{worker_id}] {result_status} ({elapsed}s): {job['title'][:30]}")
                 update_state(worker_id, status=result_status.lower(),
                              last_action=f"{result_status} ({elapsed}s)")
-                return result_status.lower(), duration_ms
+                return result_status.lower(), duration_ms, meta
 
         if "RESULT:FAILED" in output:
             for out_line in output.split("\n"):
@@ -538,28 +617,35 @@ def run_job(job: dict, port: int, worker_id: int = 0,
                         add_event(f"[W{worker_id}] {reason.upper()} ({elapsed}s): {job['title'][:30]}")
                         update_state(worker_id, status=reason,
                                      last_action=f"{reason.upper()} ({elapsed}s)")
-                        return reason, duration_ms
+                        return reason, duration_ms, meta
                     add_event(f"[W{worker_id}] FAILED ({elapsed}s): {reason[:30]}")
                     update_state(worker_id, status="failed",
                                  last_action=f"FAILED: {reason[:25]}")
-                    return f"failed:{reason}", duration_ms
-            return "failed:unknown", duration_ms
+                    return f"failed:{reason}", duration_ms, meta
+            return "failed:unknown", duration_ms, meta
+
+        if _looks_like_successful_submission(output):
+            if meta.get("verification_confidence") is None:
+                meta["verification_confidence"] = 0.55
+            add_event(f"[W{worker_id}] APPLIED? ({elapsed}s): heuristic confirmation")
+            update_state(worker_id, status="applied", last_action=f"APPLIED? ({elapsed}s)")
+            return "applied", duration_ms, meta
 
         add_event(f"[W{worker_id}] NO RESULT ({elapsed}s)")
         update_state(worker_id, status="failed", last_action=f"no result ({elapsed}s)")
-        return "failed:no_result_line", duration_ms
+        return "failed:no_result_line", duration_ms, meta
 
     except subprocess.TimeoutExpired:
         duration_ms = int((time.time() - start) * 1000)
         elapsed = int(time.time() - start)
         add_event(f"[W{worker_id}] TIMEOUT ({elapsed}s)")
         update_state(worker_id, status="failed", last_action=f"TIMEOUT ({elapsed}s)")
-        return "failed:timeout", duration_ms
+        return "failed:timeout", duration_ms, {}
     except Exception as e:
         duration_ms = int((time.time() - start) * 1000)
         add_event(f"[W{worker_id}] ERROR: {str(e)[:40]}")
         update_state(worker_id, status="failed", last_action=f"ERROR: {str(e)[:25]}")
-        return f"failed:{str(e)[:100]}", duration_ms
+        return f"failed:{str(e)[:100]}", duration_ms, {}
     finally:
         with _claude_lock:
             _claude_procs.pop(worker_id, None)
@@ -654,23 +740,40 @@ def worker_loop(worker_id: int = 0, limit: int = 1,
             add_event(f"[W{worker_id}] Launching Chrome...")
             chrome_proc = launch_chrome(worker_id, port=port, headless=headless)
 
-            result, duration_ms = run_job(job, port=port, worker_id=worker_id,
-                                            model=model, dry_run=dry_run)
+            result, duration_ms, meta = run_job(
+                job,
+                port=port,
+                worker_id=worker_id,
+                model=model,
+                dry_run=dry_run,
+            )
 
             if result == "skipped":
                 release_lock(job["url"])
                 add_event(f"[W{worker_id}] Skipped: {job['title'][:30]}")
                 continue
             elif result == "applied":
-                mark_result(job["url"], "applied", duration_ms=duration_ms)
+                mark_result(
+                    job["url"],
+                    "applied",
+                    duration_ms=duration_ms,
+                    task_id=meta.get("task_id"),
+                    verification_confidence=meta.get("verification_confidence"),
+                )
                 applied += 1
                 update_state(worker_id, jobs_applied=applied,
                              jobs_done=applied + failed)
             else:
                 reason = result.split(":", 1)[-1] if ":" in result else result
-                mark_result(job["url"], "failed", reason,
-                            permanent=_is_permanent_failure(result),
-                            duration_ms=duration_ms)
+                mark_result(
+                    job["url"],
+                    "failed",
+                    reason,
+                    permanent=_is_permanent_failure(result),
+                    duration_ms=duration_ms,
+                    task_id=meta.get("task_id"),
+                    verification_confidence=meta.get("verification_confidence"),
+                )
                 failed += 1
                 update_state(worker_id, jobs_failed=failed,
                              jobs_done=applied + failed)

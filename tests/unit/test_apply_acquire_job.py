@@ -179,3 +179,32 @@ def test_acquire_job_auto_recovers_stale_lock(monkeypatch, tmp_path):
     assert row[2] == "worker-4"
 
     database.close_connection(db_path)
+
+
+def test_mark_result_persists_task_id_and_verification_confidence(monkeypatch, tmp_path):
+    db_path = tmp_path / "apply-mark-result.db"
+    conn = database.init_db(db_path)
+    url = "https://mark-result.example/job"
+    _insert_job(conn, url=url, apply_status="in_progress", apply_attempts=0)
+    conn.commit()
+
+    monkeypatch.setattr(launcher, "get_connection", lambda: database.get_connection(db_path))
+
+    launcher.mark_result(
+        url,
+        "applied",
+        duration_ms=1500,
+        task_id="task-123",
+        verification_confidence=0.876,
+    )
+
+    row = conn.execute(
+        "SELECT apply_status, apply_task_id, verification_confidence FROM jobs WHERE url = ?",
+        (url,),
+    ).fetchone()
+
+    assert row[0] == "applied"
+    assert row[1] == "task-123"
+    assert row[2] == "0.88"
+
+    database.close_connection(db_path)

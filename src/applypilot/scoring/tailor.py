@@ -14,13 +14,11 @@ import logging
 import re
 import time
 from datetime import datetime, timezone
-from pathlib import Path
 
 from applypilot.config import RESUME_PATH, TAILORED_DIR, load_profile
 from applypilot.database import get_connection, get_jobs_by_stage
 from applypilot.llm import get_client
 from applypilot.scoring.validator import (
-    FABRICATION_WATCHLIST,
     sanitize_text,
     validate_json_fields,
     validate_tailored_resume,
@@ -106,6 +104,7 @@ BULLETS: Strong verb + what you built + quantified impact. Vary verbs (Built, De
 - Do NOT invent work, companies, degrees, certifications, or projects.
 - Do NOT change real numbers ({metrics_str})
 - Preserved companies: {companies_str} -- names stay as-is
+- Preserved projects: {projects_str} -- do not invent or rename into fake projects
 - Preserved school: {school}
 - Must fit 1 page.
 
@@ -368,7 +367,13 @@ def tailor_resume(
         f"DESCRIPTION:\n{(job.get('full_description') or '')[:6000]}"
     )
 
-    report: dict = {"attempts": 0, "validator": None, "judge": None, "status": "pending"}
+    report: dict = {
+        "attempts": 0,
+        "validator": None,
+        "programmatic": None,
+        "judge": None,
+        "status": "pending",
+    }
     avoid_notes: list[str] = []
     tailored = ""
     client = get_client()
@@ -414,7 +419,17 @@ def tailor_resume(
         # Assemble text (header injected by code, em dashes auto-fixed)
         tailored = assemble_resume_text(data, profile)
 
-        # Layer 2: LLM judge (catches subtle fabrication)
+        # Layer 2: Programmatic full-text validation
+        programmatic = validate_tailored_resume(tailored, profile, original_text=resume_text)
+        report["programmatic"] = programmatic
+        if not programmatic["passed"]:
+            avoid_notes.extend(programmatic["errors"])
+            if attempt < max_retries:
+                continue
+            report["status"] = "failed_programmatic"
+            return tailored, report
+
+        # Layer 3: LLM judge (catches subtle fabrication that rules can miss)
         judge = judge_tailored_resume(resume_text, tailored, job.get("title", ""), profile)
         report["judge"] = judge
 
@@ -466,7 +481,13 @@ def run_tailoring(min_score: int = 7, limit: int = 1000, session_id: str | None 
     t0 = time.time()
     completed = 0
     results: list[dict] = []
-    stats: dict[str, int] = {"approved": 0, "failed_validation": 0, "failed_judge": 0, "error": 0}
+    stats: dict[str, int] = {
+        "approved": 0,
+        "failed_validation": 0,
+        "failed_programmatic": 0,
+        "failed_judge": 0,
+        "error": 0,
+    }
 
     for job in jobs:
         completed += 1
@@ -555,17 +576,22 @@ def run_tailoring(min_score: int = 7, limit: int = 1000, session_id: str | None 
 
     elapsed = time.time() - t0
     log.info(
-        "Tailoring done in %.1fs: %d approved, %d failed_validation, %d failed_judge, %d errors",
+        "Tailoring done in %.1fs: %d approved, %d failed_validation, %d failed_programmatic, %d failed_judge, %d errors",
         elapsed,
         stats.get("approved", 0),
         stats.get("failed_validation", 0),
+        stats.get("failed_programmatic", 0),
         stats.get("failed_judge", 0),
         stats.get("error", 0),
     )
 
     return {
         "approved": stats.get("approved", 0),
-        "failed": stats.get("failed_validation", 0) + stats.get("failed_judge", 0),
+        "failed": (
+            stats.get("failed_validation", 0)
+            + stats.get("failed_programmatic", 0)
+            + stats.get("failed_judge", 0)
+        ),
         "errors": stats.get("error", 0),
         "elapsed": elapsed,
     }

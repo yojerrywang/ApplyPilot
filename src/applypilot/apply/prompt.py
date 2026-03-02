@@ -199,7 +199,6 @@ def _build_hard_rules(profile: dict) -> str:
     display_name = f"{preferred_name} {preferred_last}".strip() if preferred_last else preferred_name
 
     # Build work auth rule dynamically
-    auth_info = work_auth.get("legally_authorized_to_work", "")
     sponsorship = work_auth.get("require_sponsorship", "")
     permit_type = work_auth.get("work_permit_type", "")
 
@@ -449,7 +448,14 @@ def build_prompt(job: dict, tailored_resume: str,
 
     src_pdf = Path(resume_path).with_suffix(".pdf").resolve()
     if not src_pdf.exists():
-        raise ValueError(f"Resume PDF not found: {src_pdf}")
+        src_txt = Path(resume_path).with_suffix(".txt").resolve()
+        if src_txt.exists():
+            from applypilot.scoring.pdf import convert_to_pdf
+
+            logger.info("Resume PDF missing; generating from text: %s", src_txt)
+            src_pdf = convert_to_pdf(src_txt).resolve()
+        else:
+            raise ValueError(f"Resume PDF not found: {src_pdf}")
 
     # Copy to a clean filename for upload (recruiters see the filename)
     full_name = personal["full_name"]
@@ -595,6 +601,10 @@ RESULT:LOGIN_ISSUE -- could not sign in or create account
 RESULT:FAILED:not_eligible_location -- onsite outside acceptable area, no remote option
 RESULT:FAILED:not_eligible_work_auth -- requires unauthorized work location
 RESULT:FAILED:reason -- any other failure (brief reason)
+
+If RESULT:APPLIED, include a second line with best-effort metadata:
+RESULT_META: {{"confirmation_url":"https://...", "verification_confidence":0.0-1.0, "task_id":"optional-id"}}
+If metadata is unknown, still output RESULT:APPLIED and use null/omitted fields.
 
 == BROWSER EFFICIENCY ==
 - browser_snapshot ONCE per page to understand it. Then use browser_take_screenshot to check results (10x less memory).

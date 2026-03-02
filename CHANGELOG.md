@@ -8,12 +8,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
-- Created `scripts/applypilot-daily.sh` MVP harness to execute pipeline concurrently across pseudo-tracks using `APPLYPILOT_DIR`.
-- Enforced strict LLM token budgets in bash harness (`MAX_SCORE=400`, `--min-score 8`) to structurally cap API spend.
-- Added YAML configuration sanity checking to bash harness to block runs if `results_per_site` exceeds 40.
+- Created `scripts/applypilot-daily.sh` MVP harness for pseudo-tracks using `APPLYPILOT_DIR` (sequential discover/score per track, parallel apply stage).
+- Added harness budget guardrails (`MAX_SCORE=400` pre-run pending queue trim, `--min-score 8`, and `--limit 10`) to reduce spend risk.
+- Added YAML configuration sanity checking in harness to skip tracks when `results_per_site` exceeds 40.
 - Drafted `docs/SAAS-PLAN-1M-ARR.md` outlining pricing, unit economics, and 90-day execution milestones.
 - Formalized Epic 6 in `ROADMAP.md` and `BACKLOG.md` introducing Inbox Telemetry Scanning, an API-First apply engine switch, and the new $5/mo Alumni mode tracker.
-- Architectural Epic 5 (Multi-Track Agent Loop) tickets added to `ROADMAP.md` and `BACKLOG.md` introducing strict resume quality gates (header verification, metric quotas, claim-to-evidence validation).
+- Architectural Epic 5 (Multi-Track Agent Loop) tickets added to `ROADMAP.md` and `BACKLOG.md`, including planned resume quality gates (header verification, metric quotas, claim-to-evidence validation).
 - Native `dedupe` pipeline stage to automatically remove semantic duplicate jobs (same title and company) prioritizing by fit score and recency. Run manually via `applypilot run dedupe`.
 - Session ID tracking (`APPLYPILOT_SESSION_ID`) to group discovered jobs by run batch. Auto-generated via CLI or overrideable via environment variables.
 - Custom AI coding assistant workflow instructions (`CLAUDE.md`, `.cursorrules`, `.agents/workflows/`) explicitly documented to enable smart automation triggers like `save atp`.

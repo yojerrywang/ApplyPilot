@@ -50,6 +50,10 @@
 ### ✅ CI branch gating artifact
 - Added `required-checks` CI gate job and branch-protection baseline docs for `dev` + `main`.
 
+### ✅ Track isolation via `APPLYPILOT_DIR` (MVP)
+- CLI/runtime already support `APPLYPILOT_DIR` so each role can run with isolated `profile.json`, `searches.yaml`, logs, and SQLite DB.
+- Daily harness uses this pattern to run isolated track directories (for example, `~/.applypilot_pm`, `~/.applypilot_swe`).
+
 ## P1 — Pipeline Efficiency and Cost Controls
 
 ### 3) Keep broad discovery, then cheap filters before expensive LLM stages
@@ -72,13 +76,15 @@
 - Acceptance criteria:
   - `applypilot init` (or a dedicated `ingest` command) generates a highly structured `master_facts.json` containing immutable facts.
 
-### 12) Track Isolation via `APPLYPILOT_DIR` & DB Updates (P0)
-- Goal: Support isolated pseudo-tracks immediately using environment variables, then native DB scaffolding.
+### 12) Native Role-Track Schema & DB Plumbing (P0)
+- Goal: Move from env-var pseudo-tracks to first-class in-app role tracks.
 - Scope:
-  - Ensure the CLI and codebase respect an `APPLYPILOT_DIR` environment variable to completely isolate `profile.json`, `searches.yaml`, and the SQLite DB per role (e.g., `~/.applypilot_pm`).
-  - Native Phase: Define `role_tracks.yaml` (tracks, include/exclude titles, budgets) and update jobs table schema to persist `role_track`.
+  - Define `role_tracks.yaml` (tracks, include/exclude titles, budgets, scoring thresholds).
+  - Update jobs table schema to persist `role_track` on discovered/scored/tailored rows.
+  - Add CLI/runtime selection so runs can target one or more tracks without duplicating directories.
 - Acceptance criteria:
-  - Running `APPLYPILOT_DIR=~/.applypilot_pm applypilot run` completely isolates the run from the default `~/.applypilot` directory.
+  - Jobs are stamped with `role_track` and visible in status/dashboard queries.
+  - Runs can be scoped by track without requiring separate home directories.
 
 ### 13) Track-Aware Discovery & Scoring (P0)
 - Goal: Route jobs into their respective tracks and filter out noise cheaply.
@@ -173,6 +179,40 @@
   - Fire a single summary email with the top 3 high-paying jobs.
 - Acceptance criteria:
   - Alumni users consume < 5% of standard LLM tokens but remain active in the system.
+
+## Epic 7 — SaaS Platform Foundation (Phase 4)
+
+### 19) Tenant Auth & Access Model (P0)
+- Goal: Introduce account-level isolation required for hosted multi-user operation.
+- Scope:
+  - Add users, tenants, memberships, and session/auth tables.
+  - Enforce tenant scoping in all read/write paths.
+- Acceptance criteria:
+  - Cross-tenant data access is blocked by default and validated in tests.
+
+### 20) Hosted Database Migration (P0)
+- Goal: Replace single-user local SQLite as the system of record for SaaS mode.
+- Scope:
+  - Define Postgres schema and migration path from local SQLite.
+  - Add migration tooling and rollback-safe rollout process.
+- Acceptance criteria:
+  - Hosted environment runs end-to-end on Postgres with tenant-safe queries.
+
+### 21) Billing, Plans, and Entitlements (P0)
+- Goal: Enforce weekly plans and usage-based overage in product.
+- Scope:
+  - Integrate billing provider for subscriptions, payment state, and webhooks.
+  - Map plan entitlements (tracks, submissions, support level) into runtime checks.
+- Acceptance criteria:
+  - Plan limits and overage billing are enforced automatically before run execution.
+
+### 22) Usage Metering and Budget Kill-Switches (P0)
+- Goal: Keep contribution margin healthy under heavy usage.
+- Scope:
+  - Meter per-tenant scoring/tailoring/apply usage and estimated cost.
+  - Add daily/weekly budget guardrails with pause/stop controls.
+- Acceptance criteria:
+  - Runs stop or throttle when tenant budget thresholds are exceeded, with clear audit logs.
 
 ## Notes
 - Prioritize P0 items first; they directly address current filtering confusion and wasted downstream compute.

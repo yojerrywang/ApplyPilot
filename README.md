@@ -74,7 +74,7 @@ ApplyPilot is transitioning from a single-persona resume builder into a **Multi-
 
 **The Multi-Track Playbook:**
 1. Maintain discrete "Role Tracks" (e.g. `pm`, `swe`, `content_mgr`).
-2. Enforce strict Quality Gates: every tailored resume must contain X keywords and Y quantified metrics, or the pipeline aborts.
+2. Use shipped safeguards now (validator checks, preserved-fact checks, apply result parsing), then add stricter keyword/metric quotas as Epic 5 work lands.
 3. Use the nightly supervisor harness to cycle through isolated environments automatically.
 
 **Running the MVP Harness Today:**
@@ -84,11 +84,11 @@ Before native SQLite track scaffolding is built, you can emulate this isolation 
 3. Run the built-in `scripts/applypilot-daily.sh` to sequentially discover/score, and horizontally auto-apply across all tracks.
 
 **Estimated Cost Modeling (Running 5 Roles, 5 Days/Week):**
-Assuming 1,000 jobs scored/day, yielding top 30 tailored resumes/day per role:
-- **Scoring & Tailoring (Gemini Flash / GPT-4o-mini):** ~$6.50/week total.
-- **Autonomous Browser Apply (Claude 3.5 Sonnet):** ~$70.00/week (assuming ~70% form success rate, translating to ~525 actual submissions).
-- **Total weekly budget:** **~$77.00/week** 
-*Pro tip: Switching the apply stage to `claude-3-haiku` drastically cuts the browser automation costs.*
+Current harness defaults in `scripts/applypilot-daily.sh` are `MAX_SCORE=400`, `--min-score 8`, and `--limit 10` across `5` tracks.
+- **OpenAI scoring + tailoring (gpt-5-mini style baseline):** about `$12/week` at those caps.
+- **Claude apply agent:** typically `$17-$90/week` depending on model and per-application token usage.
+- **Total API envelope:** roughly `$30-$140/week`, plus cloud hosting.
+Treat this as a planning range, not a fixed guarantee. Actual cost depends on model selection, retries, and ATS complexity.
 
 ---
 

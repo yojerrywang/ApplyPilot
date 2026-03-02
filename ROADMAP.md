@@ -1,6 +1,6 @@
 # ApplyPilot Roadmap (2026)
 
-This roadmap is synced with `/Users/admin/Projects/ApplyPilot/docs/SAAS-PLAN-1M-ARR.md`.
+This roadmap is synced with `docs/SAAS-PLAN-1M-ARR.md`.
 It defines what we ship, in order, to reach **$1M ARR** with sustainable margins.
 
 ## Strategic Objective
@@ -126,6 +126,7 @@ Deliverables:
 - Billing with weekly plans and usage-based overage.
 - Introduce `Alumni Mode` ($5/mo) to monetize successful churn.
 - Budget policies and per-tenant usage limits.
+- Backlog mapping: `BACKLOG.md` tickets `#19-#22`.
 
 Exit criteria:
 - One hosted environment can support multiple isolated users safely.

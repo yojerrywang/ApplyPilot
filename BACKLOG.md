@@ -62,19 +62,52 @@
   - No LLM stages execute on jobs excluded by dedupe/filters.
   - Stage-order tests pass in sequential + streaming modes.
 
-## P2 — Observability and UX
+## Epic 5 — Multi-Track Autonomous Job-Hunting Agent Loop
 
-### 11) Role-track based tailoring (multi-role consistency)
-- Goal: Support separate resume-tailoring tracks per target role (e.g., Product Manager, Content Manager, Communications Specialist) to reduce large rewrites and hallucinations.
+### 11) Master Fact Bank Intake Flow (P1)
+- Goal: Create an onboarding/intake loop to build the canonical `master_facts.json` instead of a flat profile.
 - Scope:
-  - Add role-track config (keywords/titles, approved facts, banned claims, tone constraints, and max rewrite aggressiveness).
-  - Classify jobs into a role track before tailoring.
-  - Tailor only within that track’s approved facts and style constraints.
-  - Add validator rules to reject unsupported claims and over-stretched edits.
+  - Enhance parsing to extract hard facts (metrics, tools, dates) vs soft claims.
+  - Implement initial probing questions to the user for missing metrics (e.g., "You mentioned AWS, what was the monthly spend?").
 - Acceptance criteria:
-  - Jobs are consistently assigned to a role track.
-  - Tailored resumes remain fact-consistent and role-consistent across applications.
-  - Hallucination/unsupported-claim rate drops versus current baseline.
+  - `applypilot init` (or a dedicated `ingest` command) generates a highly structured `master_facts.json` containing immutable facts.
+
+### 12) Track Isolation via `APPLYPILOT_DIR` & DB Updates (P0)
+- Goal: Support isolated pseudo-tracks immediately using environment variables, then native DB scaffolding.
+- Scope:
+  - Ensure the CLI and codebase respect an `APPLYPILOT_DIR` environment variable to completely isolate `profile.json`, `searches.yaml`, and the SQLite DB per role (e.g., `~/.applypilot_pm`).
+  - Native Phase: Define `role_tracks.yaml` (tracks, include/exclude titles, budgets) and update jobs table schema to persist `role_track`.
+- Acceptance criteria:
+  - Running `APPLYPILOT_DIR=~/.applypilot_pm applypilot run` completely isolates the run from the default `~/.applypilot` directory.
+
+### 13) Track-Aware Discovery & Scoring (P0)
+- Goal: Route jobs into their respective tracks and filter out noise cheaply.
+- Scope:
+  - Update discovery to partition incoming jobs by track.
+  - Score in two passes: cheap rule filter first, then LLM scoring only on survivors within the track quota.
+- Acceptance criteria:
+  - Discovery output cleanly isolates into configured tracks.
+  - A track with a quota of N only passes N jobs to the expensive LLM tailor stage.
+
+### 14) Track Budget Policies & Throttle Configs (P0)
+- Goal: Treat application matching as a paid performance channel with strict ROI controls.
+- Scope:
+  - Add native Python limits for daily throughput per track (e.g., `score_budget: 300`, `tailor_budget: 15`).
+  - Add logic to halt/pause tracks if 21-day lagging interview conversion drops below a threshold.
+  - Explore Batch API for scoring and tailoring to instantly drop token costs by 50%.
+- Acceptance criteria:
+  - You can configure a hard $15/week spending cap by limiting maximum jobs scored and tailored per day, and the engine correctly stops processing when the cap is hit.
+
+### 15) Resume Quality Gates & Claim-to-Evidence Validation (P0)
+- Goal: Block "usable but weak" resumes from being automatically applied to preserve interview conversion rates.
+- Scope:
+  - Enforce strict resume header structure (Full name, proper contact info).
+  - Enforce minimum keyword matching (e.g., must hit 6-10 JD keywords).
+  - Enforce quantification (e.g., at least 5 bullets must contain a numeric metric).
+  - Implement Claim-to-Evidence mapping in tailor prompts to prevent hallucinated projects/skills.
+  - Fail closed: if validation fails, discard the tailored resume and block application.
+- Acceptance criteria:
+  - The pipeline intentionally crashes/discards a payload if the resume lacks metrics, has a broken header, or hallucinates skills.
 
 ## P3 — Quality, DX and Dependencies
 
@@ -110,6 +143,36 @@
   - Investigate upstream fix or optional extra (e.g. `pip install applypilot[jobspy]`) so one command works where possible.
 - Acceptance criteria:
   - Install instructions are clear; medium-term path to simpler install is documented or implemented.
+
+## Epic 6 — Telemetry, API-First Apply & Churn Management (SaaS Milestones)
+
+### 16) Inbox Telemetry Scanner / Webhook (P0)
+- Goal: Close the telemetry gap for the `Callback Rate` and `Interview Rate` metrics.
+- Scope:
+  - Build a secure script (or extension proxy) to scan the authenticated Gmail/Outlook inbox for recruiter responses tied to jobs in the database.
+  - Automatically update `jobs.interview_status` without manual user reporting.
+- Acceptance criteria:
+  - The pipeline can definitively prove 100% of the callbacks generated without the user having to log into a dashboard.
+
+### 17) API-First Apply Engine (Greenhouse/Lever) (P1)
+- Goal: Stop burning $119/week on cloud Playwright compute for standard SaaS users.
+- Scope:
+  - Reverse-engineer standard Greenhouse/Lever POST endpoints.
+  - Bypass Playwright GUI flows entirely for 80% of jobs; submit JSON directly.
+  - Only route jobs to the Playwright Claude Code fallback if the API fails or the form is complex (e.g., Workday).
+- Acceptance criteria:
+  - Apply latency drops from 60 seconds/job to 2 seconds/job for Greenhouse links.
+  - Cloud server resources drop significantly.
+
+### 18) Alumni Mode Tracker ($5/mo Segment) (P2)
+- Goal: Monetize churn when a user successfully gets hired.
+- Scope:
+  - Add `is_alumni_mode` flag to user tenant/profile.
+  - Discovery script runs weekly instead of daily.
+  - Score jobs but skip `tailor` and `apply` completely.
+  - Fire a single summary email with the top 3 high-paying jobs.
+- Acceptance criteria:
+  - Alumni users consume < 5% of standard LLM tokens but remain active in the system.
 
 ## Notes
 - Prioritize P0 items first; they directly address current filtering confusion and wasted downstream compute.

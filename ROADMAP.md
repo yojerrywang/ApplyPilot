@@ -1,73 +1,195 @@
-# ApplyPilot Product Roadmap & PM Framework
+# ApplyPilot Roadmap (2026)
 
-This document outlines the high-level Epics (major milestones) for the ApplyPilot project and defines the strict Product Management framework used to orchestrate AI Developer Agents.
+This roadmap is synced with `/Users/admin/Projects/ApplyPilot/docs/SAAS-PLAN-1M-ARR.md`.
+It defines what we ship, in order, to reach **$1M ARR** with sustainable margins.
 
----
+## Strategic Objective
 
-## 🧭 The Documentation Lifecycle (End-to-End)
+Build an outcomes-first job search SaaS with clear spend control:
 
-To prevent AI hallucination and maintain a pristine codebase, all project momentum flows through a strict documentation lifecycle:
+- Target: **$1,000,000 ARR**
+- Gross margin: **>= 65%** (company level)
+- Active paid users at target: **~400** (blended ARPU around `$210/month`)
+- Core promise: **more interviews, faster, with less effort and controlled spend**
 
-1. **`ROADMAP.md` (The "Why")**: Defines the massive, overarching Epics and the strategic vision. It is the north star.
-2. **`BACKLOG.md` (The "What")**: The Roadmap Epics are broken down into specific, actionable P0/P1/P2/P3 tickets here. The AI pulls from this menu to execute localized Sprints.
-3. **`CHANGELOG.md` (The "Done")**: When a Backlog ticket is completed via a git commit, it is recorded here so the history of shipped features is immutable.
-4. **`README.md` (The "How")**: If a completed feature changes how a human interacts with the product (new CLI flags, config schemas, etc.), the README is updated to reflect the new reality.
-5. **Feedback Loop**: As the `README.md` capabilities expand and users request new features based on the current product, those requests inform the next massive Epic in the `ROADMAP.md`.
+## Product Positioning
 
-*Note: You can instantly trigger steps 3, 4, and 5 by using the `/save_atp` custom workflow command.*
+ApplyPilot is not "mass apply for volume."
+It is a multi-track, automated pipeline that optimizes for:
 
-### ✅ Documentation Governance (Source of Truth Rules)
+1. Match quality (targeting)
+2. Reliable daily execution (throughput)
+3. Submission quality and verification
+4. Measurable funnel outcomes (callbacks, screens, interviews)
 
-Use this order for every feature or fix:
+## Documentation Lifecycle
 
-1. **Plan in `ROADMAP.md`** (if strategic scope changes)
-2. **Define execution in `BACKLOG.md`** (ticket + acceptance criteria)
-3. **Implement code + tests**
-4. **Record shipped behavior in `CHANGELOG.md`**
-5. **Reflect user-facing behavior in `README.md`**
-6. **Feed learnings back into `ROADMAP.md`** (new constraints, priorities, or epics)
+Use this order for every strategic or execution change:
 
-Hard rules:
-- `README.md` must describe only what is currently implemented.
-- `CHANGELOG.md` entries must map to merged commits, not planned work.
-- `BACKLOG.md` is the execution contract for AIs (no undocumented scope expansion).
-- If docs conflict, precedence is: `CHANGELOG.md` + code > `README.md` > `BACKLOG.md` > `ROADMAP.md`.
+1. `ROADMAP.md` defines strategic direction.
+2. `BACKLOG.md` defines executable tickets with acceptance criteria.
+3. Code + tests implement the ticket.
+4. `CHANGELOG.md` records merged behavior changes.
+5. `README.md` documents user-facing behavior that exists now.
 
----
+Source-of-truth precedence:
+- code + `CHANGELOG.md` > `README.md` > `BACKLOG.md` > `ROADMAP.md`
 
-## 🤖 AI Product Management Principles
+## KPI Scorecard and Guardrails
 
-When acting as the PM for the AI coding assistants on this repository, ruthlessly enforce these four rules:
+North-star KPI:
+- Interview outcomes per verified submission cohort.
 
-1. **The "Definition of Done" (DoD) is Absolute**: AIs will rush to declare victory if the code compiles. You must provide strict Acceptance Criteria for every Backlog ticket (e.g., "Prove it works by writing a test suite that processes 10 fake DB rows").
-2. **Force "Tracer Bullets" First**: Never let an AI write 500 lines of brittle automation code blindly. Force the AI to build a tiny, end-to-end slice of functionality (a Tracer Bullet) and prove it works before authorizing the full feature build-out.
-3. **Maintain the Menu**: Do not give open-ended prompts. Say: *"Look at BACKLOG.md, read the first two P1 items, tell me your architecture plan, and wait for my approval before coding."*
-4. **Instrument Telemetry**: Always demand the AI builds observability into the core systems (e.g., tracking the exact % of jobs where the LLM formatting fails). If a metric dips below your threshold, it becomes a P0 ticket for the next Sprint.
+Operating KPIs:
+- Verified submissions per user per week
+- Callback rate
+- Recruiter screen rate
+- Interview rate
+- Apply success rate (submitted vs attempted)
+- Cost per verified submission
+- Cost per callback
+- Time-to-first-callback
 
----
+Business guardrails:
+- CAC payback <= 8 weeks
+- LTV:CAC >= 3.0
+- Refund rate <= 5%
+- Loaded COGS target `$60-$75/user/month` (red line at `$85+`)
 
-## 🗺️ Current Roadmap (Epics)
+## Roadmap Phases
 
-### 🟢 Epic 1: MVP Pipeline Stabilization (Completed)
-- **Goal**: Fortify the entire 6-stage core pipeline against rate-limits, LLM hallucinations, and config tech-debt.
-- **Status**: Shipped. (Data ingestion stabilized, OpenRouter LLM integrated, P0 backlog fixed).
+### Phase 0: Current Baseline (Completed / In Progress)
 
-### 🟡 Epic 2: Autonomous Application Testing & Hardening (In Progress)
-- **Goal**: Ensure the Claude Code/Playwright auto-submission browser module is bulletproof, handles edge-cases, and successfully submits fake or real applications without human intervention.
-- **Key Deliverables**: 
-  - Tracer bullet tests against dummy job forms.
-  - CAPTCHA failure rate telemetry and graceful aborts.
-  - Form field matching stabilization.
+Status summary:
+- Core pipeline is functional.
+- Daily multi-track harness exists (`scripts/applypilot-daily.sh`).
+- Tailoring quality and apply-result parsing were recently hardened.
+- End-to-end testing and SaaS economics controls are still incomplete.
 
-### 🔴 Epic 3: User Authentication & Multi-Tenant SaaS (Planned)
-- **Goal**: Migrate the single-user local SQLite architecture into a production-ready PostgreSQL multi-tenant backend with user accounts and session tokens.
-- **Key Deliverables**:
-  - `tenant_id` plumbing across all DB queries.
-  - Stripe billing integration tiers (Proof vs Premium).
-  - API key provisioning.
+Exit criteria:
+- Baseline reliability metrics available per run.
 
-### 🔴 Epic 4: Advanced Telemetry & Dashboard (Planned)
-- **Goal**: Give the user a beautiful, live-updating view of their funnel (Discovered -> Scored -> Tailored -> Applied -> Interviewing).
-- **Key Deliverables**: 
-  - Frontend dashboard enhancement.
-  - Pipeline conversion rate tracking.
+### Phase 1: Cost and Reliability Controls (Weeks 1-3)
+
+Goal:
+- Prevent cost runaway and increase unattended run reliability.
+
+Deliverables:
+- Hard scoring/apply quotas per track/day.
+- Discovery throttle enforcement by config.
+- Budget-aware runner output (daily cost and volume summary).
+- Retry/backoff/timeout hardening for long runs.
+
+Exit criteria:
+- Predictable max daily spend.
+- >= 95% run completion without manual intervention.
+
+### Phase 2: Outcome Instrumentation (Weeks 4-6)
+
+Goal:
+- Measure real job-funnel performance, not just pipeline activity.
+
+Deliverables:
+- Funnel attribution (`submitted -> callback -> screen -> interview`) by role and source.
+- Sub-Epic: Inbox Scanning / Email Integration to close the telemetry loop autonomously (detect recruiter emails).
+- Weekly cohort reporting and trend views.
+- Quality telemetry for failed/invalid submissions.
+
+Exit criteria:
+- Every submission tied to a track + source + cohort.
+- Weekly callback and screen rates visible in one report reliably (without user self-reporting).
+
+### Phase 3: Onboarding and Multi-Track Data Model (Weeks 7-10)
+
+Goal:
+- Improve targeting quality through better candidate data and role-specific tailoring.
+
+Deliverables:
+- Master resume intake flow.
+- Clarifying-question enrichment workflow.
+- Role-track configuration (`3-5` tracks) with constrained fact reuse.
+- Claim-to-evidence and formatting quality gates before apply.
+
+Exit criteria:
+- Lower hallucination/format failure rate.
+- Higher callback rate versus baseline cohorts.
+
+### Phase 4: SaaS Foundation & API-First Apply (Weeks 11-14)
+
+Goal:
+- Move from single-user local workflow to multi-tenant SaaS primitives, while rescuing gross margins from Playwright cloud-compute costs.
+
+Deliverables:
+- Auth + tenant model (`tenant_id` plumbing).
+- Hosted database and worker architecture.
+- Pivot mass-submissions to API-First Apply Engine (direct to ATS endpoints). Reserve browser automation for Power tier.
+- Billing with weekly plans and usage-based overage.
+- Introduce `Alumni Mode` ($5/mo) to monetize successful churn.
+- Budget policies and per-tenant usage limits.
+
+Exit criteria:
+- One hosted environment can support multiple isolated users safely.
+- Billing and usage controls enforce margin guardrails.
+
+### Phase 5: Growth Loop and Referral Engine (Weeks 15-18)
+
+Goal:
+- Reduce CAC and create compounding acquisition.
+
+Deliverables:
+- Double-sided referral credits with fraud controls.
+- Channel attribution and CAC by source.
+- In-product activation nudges (first successful run, first verified submission).
+
+Exit criteria:
+- Referral-driven share of new paid users >= 25% (target by month 6).
+- CAC for referred users materially lower than paid channels.
+
+### Phase 6: Managed Tier and Reliability Ops (Weeks 19-24)
+
+Goal:
+- Support heavy users profitably while improving trust.
+
+Deliverables:
+- Priority processing / managed queue for Power users.
+- SLA-backed support workflows.
+- Automatic rollback/kill-switch on high error or spend spikes.
+
+Exit criteria:
+- Heavy users remain margin-positive.
+- Support burden per paying user remains inside budget.
+
+## Seasonal GTM Operating Plan
+
+Use seasonal targets instead of a flat monthly plan:
+
+- Jan-Jun: prioritize growth (`~95-120` new paid users/month).
+- Jul-Sep: prioritize efficiency (`~90-105` new paid users/month).
+- Oct-Dec: prioritize retention and CAC discipline (`~40-85` new paid users/month).
+
+Execution notes:
+- Build an active-user buffer before Q4.
+- Shift Q4 budget from paid acquisition to referral and retention loops.
+
+## Risks and Mitigations
+
+1. Runaway LLM spend from high discovery/scoring volume
+- Mitigation: hard quotas, budget gates, overage pricing.
+
+2. High churn from job-seeker lifecycle dynamics
+- Mitigation: weekly plans, optionality segment, retention loops.
+
+3. Support load growth from automation edge cases
+- Mitigation: tiered SLA, diagnostics, managed tier pricing.
+
+4. Weak callback outcomes despite high throughput
+- Mitigation: strict targeting improvements and channel-level ROI pruning.
+
+## Decision Rule for Scaling
+
+Scale acquisition only when the last 4 weeks all hold:
+
+1. Gross margin >= 65%
+2. Callback trend is flat-to-up
+3. CAC payback <= 8 weeks
+4. Support/refund metrics are inside guardrails

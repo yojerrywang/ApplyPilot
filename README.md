@@ -68,6 +68,30 @@ Each stage is independent. Run them all or pick what you need.
 
 ---
 
+## 🎯 The Multi-Track "Shotgun" Strategy (Beta)
+
+ApplyPilot is transitioning from a single-persona resume builder into a **Multi-Track Autonomous Application Engine**. You should not apply to PM roles and Content roles with the same global configuration, as this leads to LLM hallucination and weak narratives.
+
+**The Multi-Track Playbook:**
+1. Maintain discrete "Role Tracks" (e.g. `pm`, `swe`, `content_mgr`).
+2. Enforce strict Quality Gates: every tailored resume must contain X keywords and Y quantified metrics, or the pipeline aborts.
+3. Use the nightly supervisor harness to cycle through isolated environments automatically.
+
+**Running the MVP Harness Today:**
+Before native SQLite track scaffolding is built, you can emulate this isolation using `APPLYPILOT_DIR`.
+1. Create isolated folders: `~/.applypilot_pm`, `~/.applypilot_swe`, etc.
+2. Place your track-specific `profile.json` (e.g., using `youremail+pm@gmail.com`), `searches.yaml`, and `.env` inside each.
+3. Run the built-in `scripts/applypilot-daily.sh` to sequentially discover/score, and horizontally auto-apply across all tracks.
+
+**Estimated Cost Modeling (Running 5 Roles, 5 Days/Week):**
+Assuming 1,000 jobs scored/day, yielding top 30 tailored resumes/day per role:
+- **Scoring & Tailoring (Gemini Flash / GPT-4o-mini):** ~$6.50/week total.
+- **Autonomous Browser Apply (Claude 3.5 Sonnet):** ~$70.00/week (assuming ~70% form success rate, translating to ~525 actual submissions).
+- **Total weekly budget:** **~$77.00/week** 
+*Pro tip: Switching the apply stage to `claude-3-haiku` drastically cuts the browser automation costs.*
+
+---
+
 ## ApplyPilot vs The Alternatives
 
 | Feature | ApplyPilot | AIHawk | Manual |

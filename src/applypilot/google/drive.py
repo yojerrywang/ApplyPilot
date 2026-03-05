@@ -4,13 +4,35 @@ import io
 import logging
 from pathlib import Path
 from typing import Any
-from googleapiclient.http import MediaIoBaseDownload, MediaFileUpload
+
+_GOOGLE_DEPS_ERROR: ModuleNotFoundError | None = None
+
+try:
+    from googleapiclient.http import MediaIoBaseDownload, MediaFileUpload
+except ModuleNotFoundError as exc:
+    if exc.name and exc.name.startswith("googleapiclient"):
+        _GOOGLE_DEPS_ERROR = exc
+        MediaIoBaseDownload = None  # type: ignore[assignment]
+        MediaFileUpload = None  # type: ignore[assignment]
+    else:
+        raise
+
 from applypilot.google.auth import get_service
 
 log = logging.getLogger(__name__)
 
+
+def _require_google_deps() -> None:
+    if _GOOGLE_DEPS_ERROR is not None:
+        raise RuntimeError(
+            "Google integration dependencies are missing. Install: "
+            "pip install google-api-python-client google-auth-oauthlib google-auth-httplib2"
+        ) from _GOOGLE_DEPS_ERROR
+
+
 def download_file(file_id: str, dest_path: Path):
     """Download a file from Google Drive."""
+    _require_google_deps()
     service = get_service("drive", "v3")
     meta = service.files().get(fileId=file_id, fields="mimeType,name").execute()
     mime_type = meta.get("mimeType", "")
@@ -34,6 +56,7 @@ def download_file(file_id: str, dest_path: Path):
 
 def upload_file(local_path: Path, folder_id: str | None = None, as_google_doc: bool = False):
     """Upload a file to Google Drive."""
+    _require_google_deps()
     service = get_service("drive", "v3")
     
     name = local_path.stem if as_google_doc else local_path.name
@@ -101,6 +124,7 @@ def replace_text_in_google_doc(document_id: str, replacements: dict[str, str]) -
 
 def export_google_doc_as_pdf(document_id: str, dest_path: Path) -> Path:
     """Export a Google Doc to PDF and write it to dest_path."""
+    _require_google_deps()
     service = get_service("drive", "v3")
     request = service.files().export_media(fileId=document_id, mimeType="application/pdf")
     fh = io.BytesIO()

@@ -50,6 +50,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and stores tokens in `~/.applypilot/google_token.json`.
 
 ### Fixed
+- **CLI stage/session wiring regression** - restored `dedupe` as a valid `run` stage and added `--session-id` forwarding in `applypilot run` and `applypilot apply`.
+- **Optional Google dependency import failure** - Google SDK imports are now lazy/guarded so non-Google commands work even when Google packages are not installed.
+- **LLM provider detection regression** - restored multi-provider detection (`local`, `gemini`, `openai`) with explicit `LLM_PROVIDER` validation and consistent default model resolution.
 - **LLM env timing bug** - provider detection no longer snapshots API keys at import;
   it reads environment variables at client creation time.
 - **LLM "hang" behavior** - improved timeout/retry handling and network error logging

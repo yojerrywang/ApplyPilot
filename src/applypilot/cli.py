@@ -35,7 +35,7 @@ console = Console()
 log = logging.getLogger(__name__)
 
 # Valid pipeline stages (in execution order)
-VALID_STAGES = ("discover", "enrich", "score", "tailor", "cover", "pdf")
+VALID_STAGES = ("discover", "dedupe", "enrich", "score", "tailor", "cover", "pdf")
 
 
 # ---------------------------------------------------------------------------
@@ -96,8 +96,9 @@ def run(
     workers: int = typer.Option(1, "--workers", "-w", help="Parallel threads for discovery/enrichment stages."),
     stream: bool = typer.Option(False, "--stream", help="Run stages concurrently (streaming mode)."),
     dry_run: bool = typer.Option(False, "--dry-run", help="Preview stages without executing."),
+    session_id: Optional[str] = typer.Option(None, "--session-id", help="Process only jobs from a specific session batch."),
 ) -> None:
-    """Run pipeline stages: discover, enrich, score, tailor, cover, pdf."""
+    """Run pipeline stages: discover, dedupe, enrich, score, tailor, cover, pdf."""
     _bootstrap()
 
     from applypilot.pipeline import run_pipeline
@@ -125,6 +126,7 @@ def run(
         dry_run=dry_run,
         stream=stream,
         workers=workers,
+        session_id=session_id,
     )
 
     if result.get("errors"):
@@ -141,6 +143,7 @@ def apply(
     dry_run: bool = typer.Option(False, "--dry-run", help="Preview actions without submitting."),
     headless: bool = typer.Option(False, "--headless", help="Run browsers in headless mode."),
     url: Optional[str] = typer.Option(None, "--url", help="Apply to a specific job URL."),
+    session_id: Optional[str] = typer.Option(None, "--session-id", help="Apply only jobs discovered in a specific session batch."),
     gen: bool = typer.Option(False, "--gen", help="Generate prompt file for manual debugging instead of running."),
     mark_applied: Optional[str] = typer.Option(None, "--mark-applied", help="Manually mark a job URL as applied."),
     mark_failed: Optional[str] = typer.Option(None, "--mark-failed", help="Manually mark a job URL as failed (provide URL)."),
@@ -231,6 +234,8 @@ def apply(
     console.print(f"  Dry run:  {dry_run}")
     if url:
         console.print(f"  Target:   {url}")
+    if session_id:
+        console.print(f"  Session:  {session_id}")
     console.print()
 
     apply_main(
@@ -242,6 +247,7 @@ def apply(
         dry_run=dry_run,
         continuous=continuous,
         workers=workers,
+        session_id=session_id,
     )
 
 

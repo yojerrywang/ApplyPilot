@@ -148,7 +148,7 @@ API keys and runtime config: `GEMINI_API_KEY`, `OPENAI_API_KEY`, `LLM_URL`, `LLM
 `LLM_PROVIDER`, `CAPSOLVER_API_KEY` (optional).
 
 #### LLM provider selection
-- Auto-detect (default): Gemini > OpenAI > local URL
+- Auto-detect (default): local URL > Gemini > OpenAI
 - Force provider explicitly:
   - `LLM_PROVIDER=gemini`
   - `LLM_PROVIDER=openai`

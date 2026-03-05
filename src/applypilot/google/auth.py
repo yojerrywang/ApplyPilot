@@ -4,14 +4,31 @@ import logging
 import os
 from pathlib import Path
 
-from google.auth.transport.requests import Request
-from google.oauth2.credentials import Credentials
-from google_auth_oauthlib.flow import InstalledAppFlow
-from googleapiclient.discovery import build
-
 from applypilot.config import APP_DIR, CONFIG_DIR
 
 log = logging.getLogger(__name__)
+
+_GOOGLE_DEPS_ERROR: ModuleNotFoundError | None = None
+
+try:
+    from google.auth.transport.requests import Request
+    from google.oauth2.credentials import Credentials
+    from google_auth_oauthlib.flow import InstalledAppFlow
+    from googleapiclient.discovery import build
+except ModuleNotFoundError as exc:
+    # Keep imports lazy/optional so core CLI paths work without Google extras.
+    if exc.name and (
+        exc.name.startswith("google")
+        or exc.name.startswith("google_auth")
+        or exc.name.startswith("googleapiclient")
+    ):
+        _GOOGLE_DEPS_ERROR = exc
+        Request = None  # type: ignore[assignment]
+        Credentials = None  # type: ignore[assignment]
+        InstalledAppFlow = None  # type: ignore[assignment]
+        build = None  # type: ignore[assignment]
+    else:
+        raise
 
 # Default scopes for resume workflows (Drive + Docs only).
 # Set APPLYPILOT_GOOGLE_FULL_SCOPES=1 to also request Gmail/Calendar scopes.
@@ -49,8 +66,19 @@ def _resolve_credentials_path() -> Path | None:
             return path
     return None
 
+
+def _require_google_deps() -> None:
+    if _GOOGLE_DEPS_ERROR is not None:
+        raise RuntimeError(
+            "Google integration dependencies are missing. Install: "
+            "pip install google-api-python-client google-auth-oauthlib google-auth-httplib2"
+        ) from _GOOGLE_DEPS_ERROR
+
+
 def get_credentials():
     """Get valid user credentials from storage or run auth flow."""
+    _require_google_deps()
+
     creds = None
     if TOKEN_PATH.exists():
         creds = Credentials.from_authorized_user_file(str(TOKEN_PATH), SCOPES)
@@ -88,7 +116,9 @@ def get_credentials():
             
     return creds
 
+
 def get_service(name: str, version: str):
     """Get a Google API service instance."""
+    _require_google_deps()
     creds = get_credentials()
     return build(name, version, credentials=creds)

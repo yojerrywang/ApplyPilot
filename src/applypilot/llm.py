@@ -21,10 +21,6 @@ import httpx
 
 log = logging.getLogger(__name__)
 
-# ---------------------------------------------------------------------------
-# Provider detection
-# ---------------------------------------------------------------------------
-
 # Provider constants
 _PROVIDER_GEMINI = "gemini"
 _PROVIDER_OPENAI = "openai"
@@ -33,10 +29,41 @@ _PROVIDER_LOCAL = "local"
 
 def _detect_provider() -> tuple[str, str, str, str]:
     """Return (provider, base_url, model, api_key) based on environment variables."""
+    model_override = os.environ.get("LLM_MODEL", "")
+    provider_override = os.environ.get("LLM_PROVIDER", "").strip().lower()
     gemini_key = os.environ.get("GEMINI_API_KEY", "")
     openai_key = os.environ.get("OPENAI_API_KEY", "")
     local_url = os.environ.get("LLM_URL", "")
-    model_override = os.environ.get("LLM_MODEL", "")
+
+    if provider_override:
+        if provider_override == _PROVIDER_OPENAI:
+            if not openai_key:
+                raise RuntimeError("LLM_PROVIDER=openai set but OPENAI_API_KEY is missing.")
+            return (
+                _PROVIDER_OPENAI,
+                "https://api.openai.com/v1",
+                model_override or "gpt-4o-mini",
+                openai_key,
+            )
+        if provider_override == _PROVIDER_GEMINI:
+            if not gemini_key:
+                raise RuntimeError("LLM_PROVIDER=gemini set but GEMINI_API_KEY is missing.")
+            return (
+                _PROVIDER_GEMINI,
+                "https://generativelanguage.googleapis.com/v1beta",
+                model_override or "gemini-2.0-flash",
+                gemini_key,
+            )
+        if provider_override == _PROVIDER_LOCAL:
+            if not local_url:
+                raise RuntimeError("LLM_PROVIDER=local set but LLM_URL is missing.")
+            return (
+                _PROVIDER_LOCAL,
+                local_url.rstrip("/"),
+                model_override or "local-model",
+                os.environ.get("LLM_API_KEY", ""),
+            )
+        raise RuntimeError("Invalid LLM_PROVIDER. Use one of: gemini, openai, local.")
 
     if gemini_key and not local_url:
         return (
@@ -67,13 +94,14 @@ def _detect_provider() -> tuple[str, str, str, str]:
         "Set GEMINI_API_KEY, OPENAI_API_KEY, or LLM_URL in your environment."
     )
 
+
 # ---------------------------------------------------------------------------
 # Client
 # ---------------------------------------------------------------------------
 
-_MAX_RETRIES = 6
-_TIMEOUT = 300  # seconds (bumped for free OpenRouter queues)
-_RETRY_BASE_WAIT = 5  # seconds — longer base wait for Gemini free tier
+_MAX_RETRIES = int(os.environ.get("LLM_MAX_RETRIES", "3"))
+_TIMEOUT = float(os.environ.get("LLM_TIMEOUT", "30"))  # seconds
+_RETRY_BASE_WAIT = float(os.environ.get("LLM_RETRY_BASE_WAIT", "2"))  # seconds
 
 
 class LLMClient:
@@ -84,7 +112,8 @@ class LLMClient:
         self.base_url = base_url
         self.model = model
         self.api_key = api_key
-        self._client = httpx.Client(timeout=_TIMEOUT)
+        timeout = httpx.Timeout(_TIMEOUT, connect=min(10.0, _TIMEOUT))
+        self._client = httpx.Client(timeout=timeout)
 
     # -- public API ---------------------------------------------------------
 
@@ -219,12 +248,12 @@ class LLMClient:
                 resp.raise_for_status()
                 return parser(resp.json())
 
-            except httpx.TimeoutException:
+            except (httpx.TimeoutException, httpx.RequestError) as e:
                 if attempt < _MAX_RETRIES - 1:
                     wait = _RETRY_BASE_WAIT * (attempt + 1)
                     log.warning(
-                        "LLM request timed out, retrying in %ds (attempt %d/%d)",
-                        wait, attempt + 1, _MAX_RETRIES,
+                        "LLM request failed (%s), retrying in %ss (attempt %d/%d)",
+                        e.__class__.__name__, wait, attempt + 1, _MAX_RETRIES,
                     )
                     time.sleep(wait)
                     continue

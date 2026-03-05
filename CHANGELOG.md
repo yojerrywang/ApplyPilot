@@ -8,39 +8,39 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
-- Native `dedupe` pipeline stage to automatically remove semantic duplicate jobs (same title and company) prioritizing by fit score and recency. Run manually via `applypilot run dedupe`.
-- Session ID tracking (`APPLYPILOT_SESSION_ID`) to group discovered jobs by run batch. Auto-generated via CLI or overrideable via environment variables.
-- Custom AI coding assistant workflow instructions (`CLAUDE.md`, `.cursorrules`, `.agents/workflows/`) explicitly documented to enable smart automation triggers like `save atp`.
-- OpenRouter local LLM integration for scoring phase with JSON validation and graceful retries.
-- Comprehensive markdown `walkthrough.md` logic detailing pipeline execution strategies and anti-fabrication validator fixes.
-- **Title exclusion enforcement**: Jobs matching `exclude_titles` from `searches.yaml` are actively discarded during discovery before database entry.
-- `applypilot doctor` command to validate profile/search/env schema, blocked URL patterns, DB readiness, and Tier 2/3 runtime prerequisites before long runs.
-- Persisted transparency counters (`filtered_by_location`, `filtered_by_title`, `deduped`) stored in SQLite and exposed to CLI/HTML reporting.
-- Stale apply-lock recovery for rows stuck in `apply_status='in_progress'` beyond a configurable timeout (`stale_lock_minutes`).
-- Expanded E2E regression coverage for `run --stream`, `apply --url`, and failure→retry→applied lifecycle.
-- Branch governance artifacts: `.github/CODEOWNERS`, `.github/BRANCH_PROTECTION.md`, and `required-checks` CI gate job.
+- **Google Docs template workflow** - new `applypilot tailor-doc` command copies a
+  Google Doc template, fills placeholders from a tailored resume text file, and
+  exports a PDF for manual review.
+- **Template renderer module** - added `src/applypilot/tools/doc_template.py` for
+  parsing tailored `.txt` output and mapping to placeholders:
+  `{{NAME}}`, `{{TITLE}}`, `{{CONTACT}}`, `{{PHONE}}`, `{{EMAIL}}`,
+  `{{SUMMARY}}`, `{{SKILLS}}`, `{{EXPERIENCE}}`, `{{PROJECTS}}`,
+  `{{SERVICE}}`, `{{EDUCATION}}`.
+- **Drive/Docs helpers** - added copy, Docs text replacement, and PDF export helpers
+  in `src/applypilot/google/drive.py`.
+- **Provider override** - `LLM_PROVIDER` env var now supports explicit provider
+  selection (`gemini`, `openai`, `local`).
 
 ### Changed
-- **LLM Provider Migration**: Switched default recommended inference from local Ollama to OpenRouter API (using `google/gemini-2.0-flash-exp:free` or similar models).
-  - *Context:* The initial direct Gemini API implementation experienced instability, prompting a shift to local Ollama models (e.g., `gemma2:2b`, `deepseek-r1:32b`, `llama3.1:8b`). However, local edge models either failed strict JSON validation/anti-fabrication checks during the resume tailoring stage or were far too slow for the massive context size (entire resume + full job description). OpenRouter provides the speed and reliability of robust API models while circumventing direct provider limitations.
-- **Session-scoped pipeline execution**: `applypilot run --session-id` now scopes downstream stages (`enrich`, `score`, `tailor`, `cover`) and pending-work polling to that batch in both sequential and streaming modes.
-- **Session-scoped dedupe execution**: `dedupe` stage now accepts optional `session_id` scope in both sequential and streaming pipeline paths.
-- **Dedupe identity correction**: Semantic dedupe now keys by normalized `company + title` (with fallback to `site` when company is unavailable) and the `jobs` schema now persists `company`.
-- **Discovery ingestion consistency**: custom discovery inserters now persist `session_id`, aligning JobSpy/Workday/SmartExtract rows with batch-scoped downstream stages and stats.
-- **Status/dashboard observability**: `applypilot status` and HTML dashboard now surface filter/dedupe transparency counters.
+- **Standalone tailor command** - `applypilot tailor` now supports:
+  - `--gdoc` to upload tailored `.txt` outputs as Google Docs
+  - `--drive-folder-id` to target a specific Drive folder
+- **Google OAuth defaults** - default scopes now focus on Drive + Docs for resume
+  workflows; Gmail/Calendar scopes can be enabled via
+  `APPLYPILOT_GOOGLE_FULL_SCOPES=1`.
+- **Google credential resolution** - auth now resolves credentials from multiple
+  practical paths (`GOOGLE_CREDENTIALS_FILE`, `~/.applypilot`, CWD, package config)
+  and stores tokens in `~/.applypilot/google_token.json`.
 
 ### Fixed
-- **Location filter backward compatibility**: Fixed bug where legacy list-based `reject_non_remote` configurations were parsed incorrectly by discovery scrapers.
-- **Discover stage session wiring**: Fixed `discover` stage invocation path to accept and propagate `session_id` correctly.
-- **Target URL apply selection**: Fixed `applypilot apply --url` lookup to include jobs where `apply_status` is `NULL` (not only non-`in_progress` non-null statuses).
-- **SmartExtract ingest path**: restored missing filtered-store helper wiring and config imports so location/title filtering and DB inserts run correctly.
-- **Hiring.Cafe title filtering**: fixed excluded-title lookup path and added filtered-title metric tracking for discovered rows.
-
-### Security
-- Removed collection/storage of job-site account password from `applypilot init` profile flow.
-- Removed plaintext password from auto-apply prompt instructions to reduce credential exposure.
-- Parameterized blocked-site and blocked-pattern SQL filters in apply job acquisition to avoid config-driven query interpolation.
-- Hardened local permissions on non-Windows systems: sensitive files (`.env`, `profile.json`) use `600`, app data directories use `700`.
+- **LLM env timing bug** - provider detection no longer snapshots API keys at import;
+  it reads environment variables at client creation time.
+- **LLM "hang" behavior** - improved timeout/retry handling and network error logging
+  in `llm.py` to fail faster and surface retry reasons.
+- **Google Docs resume download** - `download_file()` now handles Google Docs by
+  exporting to plain text instead of failing with `fileNotDownloadable`.
+- **Standalone tailoring runner syntax/control flow** - fixed loop exception handling
+  in `tailor_standalone.py` that could raise syntax/runtime errors.
 
 ## [0.2.0] - 2026-02-17
 

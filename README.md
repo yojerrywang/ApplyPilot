@@ -50,6 +50,12 @@ Runs all 6 stages, from job discovery to autonomous application submission. This
 
 Runs stages 1-5: discovers jobs, scores them, tailors your resume, generates cover letters. You submit applications manually with the AI-prepared materials.
 
+### Standalone Tailoring + Google Docs (manual apply speedrun)
+**Requires:** Python 3.11+, LLM API key (Gemini/OpenAI/local), Google OAuth credentials
+
+Paste one or more job URLs, generate tailored resumes, and optionally push outputs to
+Google Docs for human edit + PDF export.
+
 ---
 
 ## The Pipeline
@@ -114,7 +120,15 @@ Your personal data in one structured file: contact info, work authorization, com
 Job search queries, target titles, locations, boards. Run multiple searches with different parameters.
 
 ### `.env`
-API keys and runtime config: `GEMINI_API_KEY`, `LLM_MODEL`, `CAPSOLVER_API_KEY` (optional).
+API keys and runtime config: `GEMINI_API_KEY`, `OPENAI_API_KEY`, `LLM_URL`, `LLM_MODEL`,
+`LLM_PROVIDER`, `CAPSOLVER_API_KEY` (optional).
+
+#### LLM provider selection
+- Auto-detect (default): Gemini > OpenAI > local URL
+- Force provider explicitly:
+  - `LLM_PROVIDER=gemini`
+  - `LLM_PROVIDER=openai`
+  - `LLM_PROVIDER=local`
 
 ## Security & Privacy Notes
 
@@ -191,6 +205,7 @@ For end-to-end documentation governance (Roadmap → Backlog → Changelog → R
 
 ```
 applypilot init                         # First-time setup wizard
+applypilot google-auth                  # Authorize Google Drive/Docs
 applypilot run [stages...]              # Run pipeline stages (or 'all')
 applypilot run --workers 4              # Parallel discovery/enrichment
 applypilot run --stream                 # Concurrent stages (streaming mode)
@@ -208,6 +223,10 @@ applypilot status --session-id "xyz"    # Stats for a specific batch
 applypilot status                       # Pipeline statistics
 applypilot doctor                       # Validate profile/search/env/db/runtime
 applypilot dashboard                    # Open HTML results dashboard
+applypilot tailor URL [URL ...]         # Standalone tailoring from explicit URLs
+applypilot tailor ... --resume FILE_OR_DRIVE_ID
+applypilot tailor ... --gdoc --drive-folder-id FOLDER_ID
+applypilot tailor-doc --template-doc-id DOC_ID --tailored-txt PATH
 ```
 
 When `--session-id` is provided to `applypilot run`, downstream stages (`enrich`, `score`, `tailor`, `cover`) and run summary stats are scoped to that batch.
@@ -223,6 +242,45 @@ When `--session-id` is provided to `applypilot run`, downstream stages (`enrich`
 - **Keep `profile.json` and resume facts accurate.** Better profile data improves scoring and tailoring. The AI preserves your resume facts and does not fabricate; keep them truthful.
 - **Dry-run before real apply.** Use `applypilot apply --dry-run` to watch form-filling without submitting, and to catch issues early.
 - **CAPTCHAs.** If auto-apply hits many CAPTCHAs, adding a CapSolver API key can help; otherwise those applications fail gracefully.
+
+---
+
+## Google Docs Resume Workflow
+
+1. Authorize once:
+```bash
+PYTHONPATH=src .venv/bin/python -m applypilot google-auth
+```
+
+2. Generate tailored text from explicit job URLs:
+```bash
+PYTHONPATH=src .venv/bin/python -m applypilot tailor \
+  "https://www.linkedin.com/jobs/view/4376778099/" \
+  --resume "GOOGLE_DRIVE_FILE_ID_OR_NAME" \
+  --out "./tmp_outputs/live_tailor"
+```
+
+3. Optional: upload tailored text files to Drive as Google Docs:
+```bash
+PYTHONPATH=src .venv/bin/python -m applypilot tailor \
+  "URL_1" "URL_2" \
+  --resume "GOOGLE_DRIVE_FILE_ID_OR_NAME" \
+  --gdoc \
+  --drive-folder-id "FOLDER_ID"
+```
+
+4. Fill a formatted Google Doc template and export PDF:
+```bash
+PYTHONPATH=src .venv/bin/python -m applypilot tailor-doc \
+  --template-doc-id "DOC_TEMPLATE_ID" \
+  --tailored-txt "./tmp_outputs/live_tailor/SomeRole.txt" \
+  --output-name "Tailored Resume - Review" \
+  --pdf-out "./tmp_outputs/live_tailor/Tailored_Resume_Review.pdf"
+```
+
+### Supported template placeholders
+- `{{NAME}}`, `{{TITLE}}`, `{{CONTACT}}`, `{{PHONE}}`, `{{EMAIL}}`
+- `{{SUMMARY}}`, `{{SKILLS}}`, `{{EXPERIENCE}}`, `{{PROJECTS}}`, `{{SERVICE}}`, `{{EDUCATION}}`
 
 ---
 

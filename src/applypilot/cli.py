@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import logging
+import re
+from pathlib import Path
 from typing import Optional
 
 import typer
@@ -10,6 +12,13 @@ from rich.console import Console
 from rich.table import Table
 
 from applypilot import __version__
+from applypilot.google.auth import get_credentials as _get_google_creds
+from applypilot.google.drive import (
+    download_file as _drive_download,
+    find_file_by_name as _drive_find,
+    upload_file as _drive_upload,
+)
+
 
 logging.basicConfig(
     level=logging.INFO,
@@ -26,7 +35,7 @@ console = Console()
 log = logging.getLogger(__name__)
 
 # Valid pipeline stages (in execution order)
-VALID_STAGES = ("discover", "dedupe", "enrich", "score", "tailor", "cover", "pdf")
+VALID_STAGES = ("discover", "enrich", "score", "tailor", "cover", "pdf")
 
 
 # ---------------------------------------------------------------------------
@@ -35,13 +44,6 @@ VALID_STAGES = ("discover", "dedupe", "enrich", "score", "tailor", "cover", "pdf
 
 def _bootstrap() -> None:
     """Common setup: load env, create dirs, init DB."""
-    import os
-    from datetime import datetime
-    
-    # Generate a unique session ID for this run if not already set
-    if not os.environ.get("APPLYPILOT_SESSION_ID"):
-        os.environ["APPLYPILOT_SESSION_ID"] = datetime.now().strftime("%Y%m%d_%H%M%S")
-
     from applypilot.config import load_env, ensure_dirs
     from applypilot.database import init_db
 
@@ -81,47 +83,6 @@ def init() -> None:
 
 
 @app.command()
-def doctor() -> None:
-    """Validate environment/config/database readiness before long runs."""
-    from applypilot.doctor import run_checks
-
-    checks = run_checks()
-    failures = sum(1 for c in checks if c.level == "fail")
-    warnings = sum(1 for c in checks if c.level == "warn")
-
-    table = Table(title="ApplyPilot Doctor", show_header=True, header_style="bold cyan")
-    table.add_column("Status", style="bold", no_wrap=True)
-    table.add_column("Check", style="bold")
-    table.add_column("Details")
-
-    for result in checks:
-        status_style = {
-            "ok": "[green]OK[/green]",
-            "warn": "[yellow]WARN[/yellow]",
-            "fail": "[red]FAIL[/red]",
-        }.get(result.level, result.level.upper())
-
-        details = result.message
-        if result.fix:
-            details = f"{details}\n[dim]Fix: {result.fix}[/dim]"
-
-        table.add_row(status_style, result.check, details)
-
-    console.print()
-    console.print(table)
-    console.print(
-        f"\n[bold]{len(checks)} checks[/bold] "
-        f"([green]{len(checks) - warnings - failures} OK[/green], "
-        f"[yellow]{warnings} warnings[/yellow], "
-        f"[red]{failures} failures[/red])"
-    )
-    console.print()
-
-    if failures:
-        raise typer.Exit(code=1)
-
-
-@app.command()
 def run(
     stages: Optional[list[str]] = typer.Argument(
         None,
@@ -135,7 +96,6 @@ def run(
     workers: int = typer.Option(1, "--workers", "-w", help="Parallel threads for discovery/enrichment stages."),
     stream: bool = typer.Option(False, "--stream", help="Run stages concurrently (streaming mode)."),
     dry_run: bool = typer.Option(False, "--dry-run", help="Preview stages without executing."),
-    session_id: Optional[str] = typer.Option(None, "--session-id", help="Session ID to filter by batch."),
 ) -> None:
     """Run pipeline stages: discover, enrich, score, tailor, cover, pdf."""
     _bootstrap()
@@ -165,7 +125,6 @@ def run(
         dry_run=dry_run,
         stream=stream,
         workers=workers,
-        session_id=session_id,
     )
 
     if result.get("errors"):
@@ -187,7 +146,6 @@ def apply(
     mark_failed: Optional[str] = typer.Option(None, "--mark-failed", help="Manually mark a job URL as failed (provide URL)."),
     fail_reason: Optional[str] = typer.Option(None, "--fail-reason", help="Reason for --mark-failed."),
     reset_failed: bool = typer.Option(False, "--reset-failed", help="Reset all failed jobs for retry."),
-    session_id: Optional[str] = typer.Option(None, "--session-id", help="Session ID to filter by batch."),
 ) -> None:
     """Launch auto-apply to submit job applications."""
     _bootstrap()
@@ -284,20 +242,95 @@ def apply(
         dry_run=dry_run,
         continuous=continuous,
         workers=workers,
-        session_id=session_id,
     )
 
 
 @app.command()
-def status(
-    session_id: Optional[str] = typer.Option(None, "--session-id", help="Session ID to filter by batch.")
+def google_auth() -> None:
+    """Run the Google Workspace OAuth2 flow to authorize Drive/Gmail access."""
+    console.print("\n[bold blue]Google Workspace Authorization[/bold blue]")
+    try:
+        creds = _get_google_creds()
+        console.print("[green]Successfully authorized![/green]")
+        console.print(f"Token saved to: [dim]~/.applypilot/google_token.json[/dim]\n")
+    except Exception as e:
+        console.print(f"[red]Authorization failed:[/red] {e}")
+        raise typer.Exit(code=1)
+
+
+@app.command()
+def tailor(
+    urls: list[str] = typer.Argument(..., help="List of job URLs to tailor for."),
+    resume: Optional[str] = typer.Option(None, "--resume", "-r", help="Resume path or Google Drive file ID/name."),
+    out: Optional[Path] = typer.Option(None, "--out", "-o", help="Output directory for tailored resumes."),
+    gdoc: bool = typer.Option(False, "--gdoc", help="Upload tailored .txt outputs to Google Drive as Google Docs."),
+    drive_folder_id: Optional[str] = typer.Option(None, "--drive-folder-id", help="Google Drive folder ID for uploaded files."),
 ) -> None:
+    """Standalone tailoring: generate tailored resumes for specific URLs."""
+    _bootstrap()
+    
+    from applypilot.tools.tailor_standalone import StandaloneTailor
+    from pathlib import Path
+    
+    resume_path = None
+    if resume:
+        # Check if local file
+        if Path(resume).exists():
+            resume_path = Path(resume)
+        else:
+            # Try Google Drive
+            console.print(f"  [cyan]Fetching master resume from Google Drive:[/cyan] {resume}")
+            try:
+                # Resolve ID or Name
+                file_id = resume
+                if not re.match(r"^[a-zA-Z0-9-_]{25,}$", resume):
+                    # Looks like a name, try to find it
+                    found = _drive_find(resume)
+                    if found:
+                        file_id = found["id"]
+                        console.print(f"  [dim]Found file ID: {file_id}[/dim]")
+                    else:
+                        console.print(f"[red]Could not find file '{resume}' on Google Drive.[/red]")
+                        raise typer.Exit(code=1)
+                
+                from applypilot.config import CONFIG_DIR
+                dest = CONFIG_DIR / "resume_drive.txt"
+                resume_path = _drive_download(file_id, dest)
+                console.print(f"  [green]Downloaded to {resume_path}[/green]")
+            except Exception as e:
+                console.print(f"[red]Google Drive error:[/red] {e}")
+                console.print("Make sure you ran [bold]applypilot google-auth[/bold] first.")
+                raise typer.Exit(code=1)
+
+    runner = StandaloneTailor(out_dir=out, resume_path=resume_path)
+    out_dir = runner.run(urls)
+
+    if gdoc:
+        txt_files = sorted(Path(out_dir).glob("*.txt"))
+        if not txt_files:
+            console.print("[yellow]No tailored .txt outputs found to upload.[/yellow]")
+            return
+
+        console.print(f"  [cyan]Uploading {len(txt_files)} file(s) to Google Drive as Docs...[/cyan]")
+        uploaded = 0
+        for txt in txt_files:
+            try:
+                _drive_upload(txt, folder_id=drive_folder_id, as_google_doc=True)
+                uploaded += 1
+            except Exception as e:
+                console.print(f"[yellow]Upload failed for {txt.name}:[/yellow] {e}")
+
+        console.print(f"  [green]Uploaded {uploaded}/{len(txt_files)} as Google Docs.[/green]")
+
+
+@app.command()
+def status() -> None:
     """Show pipeline statistics from the database."""
     _bootstrap()
 
     from applypilot.database import get_stats
 
-    stats = get_stats(session_id=session_id)
+    stats = get_stats()
 
     console.print("\n[bold]ApplyPilot Pipeline Status[/bold]\n")
 
@@ -318,9 +351,6 @@ def status(
     summary.add_row("Ready to apply", str(stats["ready_to_apply"]))
     summary.add_row("Applied", str(stats["applied"]))
     summary.add_row("Apply errors", str(stats["apply_errors"]))
-    summary.add_row("Filtered by location", str(stats["filtered_by_location"]))
-    summary.add_row("Filtered by title", str(stats["filtered_by_title"]))
-    summary.add_row("Deduped", str(stats["deduped"]))
 
     console.print(summary)
 
@@ -331,9 +361,9 @@ def status(
         dist_table.add_column("Count", justify="right")
         dist_table.add_column("Bar")
 
-        max_count = max(int(count) for _, count in stats["score_distribution"]) or 1
+        max_count = max(count for _, count in stats["score_distribution"]) or 1
         for score, count in stats["score_distribution"]:
-            bar_len = int(int(count) / max_count * 30)
+            bar_len = int(count / max_count * 30)
             if score >= 7:
                 color = "green"
             elif score >= 5:
@@ -367,6 +397,42 @@ def dashboard() -> None:
     from applypilot.view import open_dashboard
 
     open_dashboard()
+
+
+@app.command("tailor-doc")
+def tailor_doc(
+    template_doc_id: str = typer.Option(..., "--template-doc-id", help="Google Doc template ID containing placeholders like {{SUMMARY}}."),
+    tailored_txt: Path = typer.Option(..., "--tailored-txt", help="Path to tailored resume .txt output."),
+    output_name: Optional[str] = typer.Option(None, "--output-name", help="Name for the generated Google Doc."),
+    pdf_out: Optional[Path] = typer.Option(None, "--pdf-out", help="Local PDF output path."),
+    drive_folder_id: Optional[str] = typer.Option(None, "--drive-folder-id", help="Drive folder for the generated Google Doc."),
+) -> None:
+    """Fill a Google Doc template from tailored text and export PDF for human review."""
+    _bootstrap()
+    from applypilot.tools.doc_template import render_template_to_doc_and_pdf
+
+    if not tailored_txt.exists():
+        console.print(f"[red]Tailored text not found:[/red] {tailored_txt}")
+        raise typer.Exit(code=1)
+
+    final_name = output_name or tailored_txt.stem
+    final_pdf = pdf_out or (Path.cwd() / f"{final_name}.pdf")
+
+    try:
+        doc_id, pdf_path = render_template_to_doc_and_pdf(
+            template_doc_id=template_doc_id,
+            tailored_txt_path=tailored_txt,
+            output_doc_name=final_name,
+            output_pdf_path=final_pdf,
+            drive_folder_id=drive_folder_id,
+        )
+    except Exception as e:
+        console.print(f"[red]Template render failed:[/red] {e}")
+        raise typer.Exit(code=1)
+
+    console.print("[green]Template render complete.[/green]")
+    console.print(f"Google Doc: https://docs.google.com/document/d/{doc_id}/edit")
+    console.print(f"PDF: {pdf_path}")
 
 
 if __name__ == "__main__":

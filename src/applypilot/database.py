@@ -200,6 +200,13 @@ _ALL_COLUMNS: dict[str, str] = {
     "apply_duration_ms": "INTEGER",
     "apply_task_id": "TEXT",
     "verification_confidence": "TEXT",
+    # Prospect pipeline
+    "prospect_status": "TEXT",  # NULL=not selected, 'prospect', 'tailoring', 'tailored', 'applying', 'applied', 'callback', 'interview', 'offer', 'rejected', 'withdrawn'
+    "prospect_at": "TEXT",
+    # Response tracking
+    "response_status": "TEXT",  # NULL, 'responded', 'interview', 'offer', 'rejected'
+    "response_at": "TEXT",
+    "response_notes": "TEXT",
 }
 
 

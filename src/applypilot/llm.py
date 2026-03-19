@@ -15,12 +15,14 @@ log = logging.getLogger(__name__)
 # Provider constants
 _PROVIDER_GEMINI = "gemini"
 _PROVIDER_OPENAI = "openai"
+_PROVIDER_ANTHROPIC = "anthropic"
 _PROVIDER_LOCAL = "local"
-_VALID_PROVIDERS = {_PROVIDER_GEMINI, _PROVIDER_OPENAI, _PROVIDER_LOCAL}
+_VALID_PROVIDERS = {_PROVIDER_GEMINI, _PROVIDER_OPENAI, _PROVIDER_ANTHROPIC, _PROVIDER_LOCAL}
 
 _DEFAULT_MODELS = {
     _PROVIDER_GEMINI: "gemini-2.0-flash",
     _PROVIDER_OPENAI: "gpt-4o-mini",
+    _PROVIDER_ANTHROPIC: "claude-haiku-4-5-20251001",
     _PROVIDER_LOCAL: "local-model",
 }
 
@@ -31,6 +33,7 @@ def _detect_provider() -> tuple[str, str, str, str]:
     provider_override = os.environ.get("LLM_PROVIDER", "").strip().lower()
     gemini_key = os.environ.get("GEMINI_API_KEY", "").strip()
     openai_key = os.environ.get("OPENAI_API_KEY", "").strip()
+    anthropic_key = os.environ.get("ANTHROPIC_API_KEY", "").strip()
     local_url = os.environ.get("LLM_URL", "").strip().rstrip("/")
     local_key = os.environ.get("LLM_API_KEY", "").strip() or openai_key
 
@@ -82,6 +85,16 @@ def _detect_provider() -> tuple[str, str, str, str]:
                 openai_key,
             )
 
+        if provider == _PROVIDER_ANTHROPIC:
+            if not anthropic_key:
+                raise RuntimeError("LLM_PROVIDER=anthropic requires ANTHROPIC_API_KEY.")
+            return (
+                _PROVIDER_ANTHROPIC,
+                "https://api.anthropic.com/v1",
+                resolve_model(_PROVIDER_ANTHROPIC),
+                anthropic_key,
+            )
+
         raise RuntimeError(f"Unsupported LLM provider: {provider}")
 
     if provider_override:
@@ -92,17 +105,20 @@ def _detect_provider() -> tuple[str, str, str, str]:
 
     # Auto-detect precedence:
     # 1) local endpoint (explicit LLM_URL)
-    # 2) Gemini
-    # 3) OpenAI
+    # 2) Anthropic
+    # 3) Gemini
+    # 4) OpenAI
     if local_url:
         return resolve(_PROVIDER_LOCAL)
+    if anthropic_key:
+        return resolve(_PROVIDER_ANTHROPIC)
     if gemini_key:
         return resolve(_PROVIDER_GEMINI)
     if openai_key:
         return resolve(_PROVIDER_OPENAI)
 
     raise RuntimeError(
-        "No LLM provider configured. Set GEMINI_API_KEY, OPENAI_API_KEY, or LLM_URL."
+        "No LLM provider configured. Set ANTHROPIC_API_KEY, GEMINI_API_KEY, OPENAI_API_KEY, or LLM_URL."
     )
 
 
@@ -135,6 +151,8 @@ class LLMClient:
         max_tokens: int = 4096,
     ) -> str:
         """Send a chat completion request and return the assistant message text."""
+        if self.provider == _PROVIDER_ANTHROPIC:
+            return self._chat_anthropic(messages, temperature, max_tokens)
         return self._chat_openai(messages, temperature, max_tokens)
 
     def ask(self, prompt: str, **kwargs) -> str:
@@ -143,6 +161,47 @@ class LLMClient:
 
     def close(self) -> None:
         self._client.close()
+
+    # -- Anthropic API ------------------------------------------------------
+
+    def _chat_anthropic(
+        self,
+        messages: list[dict],
+        temperature: float,
+        max_tokens: int,
+    ) -> str:
+        """Call Anthropic Messages API."""
+        headers = {
+            "Content-Type": "application/json",
+            "x-api-key": self.api_key,
+            "anthropic-version": "2023-06-01",
+        }
+
+        # Extract system message if present
+        system_text = None
+        api_messages = []
+        for msg in messages:
+            if msg["role"] == "system":
+                system_text = msg["content"]
+            else:
+                api_messages.append({"role": msg["role"], "content": msg["content"]})
+
+        payload: dict = {
+            "model": self.model,
+            "messages": api_messages,
+            "temperature": temperature,
+            "max_tokens": max_tokens,
+        }
+        if system_text:
+            payload["system"] = system_text
+
+        url = f"{self.base_url}/messages"
+        return self._request_with_retry(url, payload, headers, parser=self._parse_anthropic)
+
+    @staticmethod
+    def _parse_anthropic(data: dict) -> str:
+        """Extract text from Anthropic Messages API response."""
+        return data["content"][0]["text"]
 
     # -- OpenAI API ---------------------------------------------------------
 

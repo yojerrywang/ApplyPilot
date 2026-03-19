@@ -441,5 +441,74 @@ def tailor_doc(
     console.print(f"PDF: {pdf_path}")
 
 
+@app.command()
+def proof(
+    show: Optional[int] = typer.Option(None, "--show", "-s", help="Show detailed proof report for job #N."),
+    full: Optional[int] = typer.Option(None, "--full", "-f", help="Show full original vs tailored resume for job #N."),
+    limit: int = typer.Option(20, "--limit", "-l", help="Max reports to list."),
+) -> None:
+    """Review bridge-tailored resumes: see JD, diff, changes, and cover letters.
+
+    Without flags, lists all proof reports in a summary table.
+    Use --show N to see detailed diff/changes for a specific job.
+    Use --full N to see full original vs tailored resume text.
+    """
+    _bootstrap()
+
+    from applypilot.proof import show_proof_list, show_proof_detail, show_proof_full
+
+    if full is not None:
+        show_proof_full(full)
+    elif show is not None:
+        show_proof_detail(show)
+    else:
+        show_proof_list(limit)
+
+
+@app.command()
+def bridge(
+    min_score: int = typer.Option(8, "--min-score", "-s", help="Minimum fit_score to tailor (default 8)."),
+    limit: int = typer.Option(50, "--limit", "-l", help="Max jobs to process in this batch."),
+    resume: Optional[Path] = typer.Option(None, "--resume", "-r", help="Path to master resume PDF."),
+    rm_url: Optional[str] = typer.Option(None, "--rm-url", help="Resume-Matcher API URL (default http://localhost:8000)."),
+    dry_run: bool = typer.Option(False, "--dry-run", help="Preview what would be processed without calling the API."),
+) -> None:
+    """Batch-tailor top-scored jobs via Resume-Matcher API.
+
+    Pulls jobs with fit_score >= min_score from the database, sends each
+    to Resume-Matcher for AI-powered tailoring + cover letter generation,
+    and stores the results back in the ApplyPilot database.
+
+    Requires Resume-Matcher running locally (applypilot bridge --rm-url http://localhost:8000).
+    """
+    _bootstrap()
+
+    from applypilot.bridge import run_bridge
+
+    console.print("\n[bold blue]ApplyPilot → Resume-Matcher Bridge[/bold blue]")
+    console.print(f"  Min score: {min_score}")
+    console.print(f"  Limit:     {limit}")
+    console.print(f"  Dry run:   {dry_run}")
+    if rm_url:
+        console.print(f"  RM URL:    {rm_url}")
+    console.print()
+
+    summary = run_bridge(
+        min_score=min_score,
+        limit=limit,
+        resume_path=resume,
+        rm_url=rm_url,
+        dry_run=dry_run,
+    )
+
+    console.print(f"\n[bold]Results:[/bold]")
+    console.print(f"  Processed: {summary['processed']}")
+    console.print(f"  Succeeded: [green]{summary['succeeded']}[/green]")
+    console.print(f"  Failed:    [red]{summary['failed']}[/red]")
+    if summary.get("skipped"):
+        console.print(f"  Skipped:   [yellow]{summary['skipped']}[/yellow] (dry run)")
+    console.print()
+
+
 if __name__ == "__main__":
     app()

@@ -243,7 +243,7 @@ def get_tier() -> int:
     """
     load_env()
 
-    has_llm = bool(os.environ.get("OPENAI_API_KEY"))
+    has_llm = bool(os.environ.get("OPENAI_API_KEY") or os.environ.get("ANTHROPIC_API_KEY") or os.environ.get("GEMINI_API_KEY"))
     if not has_llm:
         return 1
 
@@ -275,8 +275,8 @@ def check_tier(required: int, feature: str) -> None:
     _console = Console(stderr=True)
 
     missing: list[str] = []
-    if required >= 2 and not os.environ.get("OPENAI_API_KEY"):
-        missing.append("OpenAI API key — run [bold]applypilot init[/bold] or set OPENAI_API_KEY")
+    if required >= 2 and not (os.environ.get("OPENAI_API_KEY") or os.environ.get("ANTHROPIC_API_KEY") or os.environ.get("GEMINI_API_KEY")):
+        missing.append("LLM API key — set ANTHROPIC_API_KEY, OPENAI_API_KEY, or GEMINI_API_KEY")
     if required >= 3:
         if not shutil.which("claude"):
             missing.append("Claude Code CLI — install from [bold]https://claude.ai/code[/bold]")
